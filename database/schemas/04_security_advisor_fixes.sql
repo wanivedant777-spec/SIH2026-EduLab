@@ -1,14 +1,15 @@
 -- ==============================================================================
 -- 04_security_advisor_fixes.sql
 -- Live Security Advisor Fixes for EduLab (Project evwjiffnyhbvqbnogbjv)
+-- Target: Zero Warnings / Errors on Supabase Security Advisors
 -- ==============================================================================
 
 -- ------------------------------------------------------------------------------
--- 1. PIN search_path ON TRIGGER AND SECURITY DEFINER FUNCTIONS
--- Prevents search_path injection (Supabase Advisor: function_search_path_mutable)
+-- 1. PIN search_path ON ALL SECURITY DEFINER & TRIGGER FUNCTIONS
+-- Fixes Supabase Advisor: function_search_path_mutable
 -- ------------------------------------------------------------------------------
 
--- Pin search_path on handle_updated_at()
+-- 1.1 handle_updated_at()
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -22,7 +23,7 @@ END;
 $$;
 ALTER FUNCTION public.handle_updated_at() SET search_path = '';
 
--- Pin search_path on handle_new_auth_user()
+-- 1.2 handle_new_auth_user()
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -92,7 +93,7 @@ END;
 $$;
 ALTER FUNCTION public.handle_new_auth_user() SET search_path = '';
 
--- Pin search_path on get_user_role()
+-- 1.3 get_user_role()
 CREATE OR REPLACE FUNCTION public.get_user_role()
 RETURNS text
 LANGUAGE sql
@@ -104,7 +105,7 @@ AS $$
 $$;
 ALTER FUNCTION public.get_user_role() SET search_path = '';
 
--- Pin search_path on is_faculty_or_admin()
+-- 1.4 is_faculty_or_admin()
 CREATE OR REPLACE FUNCTION public.is_faculty_or_admin()
 RETURNS boolean
 LANGUAGE sql
@@ -121,7 +122,7 @@ AS $$
 $$;
 ALTER FUNCTION public.is_faculty_or_admin() SET search_path = '';
 
--- Pin search_path on lookup_user_by_identifier() if present
+-- 1.5 lookup_user_by_identifier()
 CREATE OR REPLACE FUNCTION public.lookup_user_by_identifier(p_identifier text)
 RETURNS TABLE (
     email text,
@@ -140,7 +141,7 @@ AS $$
 $$;
 ALTER FUNCTION public.lookup_user_by_identifier(text) SET search_path = '';
 
--- Pin search_path on rls_auto_enable() if it exists in any schema
+-- 1.6 rls_auto_enable() (Dynamically handles event trigger or helper function)
 DO $$
 DECLARE
     r RECORD;
@@ -155,29 +156,46 @@ BEGIN
     END LOOP;
 END $$;
 
+-- 1.7 Catch-all for any remaining SECURITY DEFINER functions with mutable search_path
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN (
+        SELECT n.nspname, p.proname, pg_get_function_identity_arguments(p.oid) AS args
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.prosecdef = true
+          AND n.nspname = 'public'
+          AND (p.proconfig IS NULL OR NOT array_to_string(p.proconfig, ',') LIKE '%search_path=%')
+    ) LOOP
+        EXECUTE format('ALTER FUNCTION %I.%I(%s) SET search_path = ''''', r.nspname, r.proname, r.args);
+    END LOOP;
+END $$;
+
 
 -- ------------------------------------------------------------------------------
 -- 2. REVOKE EXECUTE ON SECURITY DEFINER FUNCTIONS FROM PUBLIC, anon, authenticated
--- (Supabase Advisor: security_definer_function_execute_public)
+-- Fixes Supabase Advisor: security_definer_function_execute_public
 -- ------------------------------------------------------------------------------
 
--- Revoke handle_updated_at
+-- 2.1 Revoke handle_updated_at
 REVOKE ALL ON FUNCTION public.handle_updated_at() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.handle_updated_at() FROM PUBLIC, anon, authenticated;
 
--- Revoke handle_new_auth_user
+-- 2.2 Revoke handle_new_auth_user
 REVOKE ALL ON FUNCTION public.handle_new_auth_user() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.handle_new_auth_user() FROM PUBLIC, anon, authenticated;
 
--- Revoke get_user_role
+-- 2.3 Revoke get_user_role
 REVOKE ALL ON FUNCTION public.get_user_role() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.get_user_role() FROM PUBLIC, anon, authenticated;
 
--- Revoke is_faculty_or_admin
+-- 2.4 Revoke is_faculty_or_admin
 REVOKE ALL ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC, anon, authenticated;
 
--- Revoke rls_auto_enable dynamically if it exists
+-- 2.5 Revoke rls_auto_enable
 DO $$
 DECLARE
     r RECORD;
@@ -193,18 +211,93 @@ BEGIN
     END LOOP;
 END $$;
 
+-- 2.6 Revoke execution on all internal SECURITY DEFINER functions in public
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN (
+        SELECT n.nspname, p.proname, pg_get_function_identity_arguments(p.oid) AS args
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.prosecdef = true
+          AND n.nspname = 'public'
+          AND p.proname IN ('get_user_role', 'handle_new_auth_user', 'is_faculty_or_admin', 'handle_updated_at', 'rls_auto_enable')
+    ) LOOP
+        EXECUTE format('REVOKE ALL ON FUNCTION %I.%I(%s) FROM PUBLIC', r.nspname, r.proname, r.args);
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %I.%I(%s) FROM PUBLIC, anon, authenticated', r.nspname, r.proname, r.args);
+    END LOOP;
+END $$;
+
+-- Explicitly allow lookup_user_by_identifier for anonymous/authenticated lookup during sign-in
+GRANT EXECUTE ON FUNCTION public.lookup_user_by_identifier(text) TO anon, authenticated;
+
 
 -- ------------------------------------------------------------------------------
--- 3. FIX SUBMISSIONS AND EVALUATIONS RLS TO AUTHORIZE VIA faculty_allocations
--- Drops any policies relying purely on is_faculty_or_admin()
+-- 3. ELIMINATE is_faculty_or_admin() DEPENDENCIES IN OTHER POLICIES
+-- Ensures no policies break now that execute is revoked on is_faculty_or_admin()
 -- ------------------------------------------------------------------------------
 
--- Clean up any legacy or broad policies on submissions
+-- Update divisions policy to direct subquery
+DROP POLICY IF EXISTS "Faculty can view divisions" ON public.divisions;
+CREATE POLICY "Faculty can view divisions"
+    ON public.divisions FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = (SELECT auth.uid()) AND role IN ('faculty', 'admin') AND status = 'active'
+        )
+    );
+
+-- Update batches policy to direct subquery
+DROP POLICY IF EXISTS "Faculty can view batches" ON public.batches;
+CREATE POLICY "Faculty can view batches"
+    ON public.batches FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = (SELECT auth.uid()) AND role IN ('faculty', 'admin') AND status = 'active'
+        )
+    );
+
+-- Update test_cases policy to direct subquery
+DROP POLICY IF EXISTS "Faculty can view all test cases" ON public.test_cases;
+CREATE POLICY "Faculty can view all test cases"
+    ON public.test_cases FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = (SELECT auth.uid()) AND role IN ('faculty', 'admin') AND status = 'active'
+        )
+    );
+
+-- Update institutional_roster policy to direct subquery
+DROP POLICY IF EXISTS "Faculty can view roster" ON public.institutional_roster;
+CREATE POLICY "Faculty can view roster"
+    ON public.institutional_roster FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = (SELECT auth.uid()) AND role IN ('faculty', 'admin') AND status = 'active'
+        )
+    );
+
+
+-- ------------------------------------------------------------------------------
+-- 4. FIX SUBMISSIONS AND EVALUATIONS RLS TO AUTHORIZE VIA faculty_allocations
+-- Faculty access is STRICTLY restricted to allocated batches & subjects
+-- ------------------------------------------------------------------------------
+
+-- 4.1 Submissions Policies
 DROP POLICY IF EXISTS "Faculty can view batch submissions" ON public.submissions;
 DROP POLICY IF EXISTS "Faculty can view all submissions" ON public.submissions;
 DROP POLICY IF EXISTS "Faculty can view allocated batch submissions" ON public.submissions;
+DROP POLICY IF EXISTS "Faculty can manage submissions" ON public.submissions;
 
--- Create strict allocation-based policy on submissions
 CREATE POLICY "Faculty can view allocated batch submissions"
     ON public.submissions FOR SELECT
     TO authenticated
@@ -225,13 +318,39 @@ CREATE POLICY "Faculty can view allocated batch submissions"
         )
     );
 
--- Clean up any legacy policies on evaluations
+-- Ensure student submission policies are consistent
+DROP POLICY IF EXISTS "Students can view own submissions" ON public.submissions;
+CREATE POLICY "Students can view own submissions"
+    ON public.submissions FOR SELECT
+    TO authenticated
+    USING ((SELECT auth.uid()) = student_id);
+
+DROP POLICY IF EXISTS "Students can insert own submissions" ON public.submissions;
+DROP POLICY IF EXISTS "Students can create own submissions" ON public.submissions;
+CREATE POLICY "Students can create own submissions"
+    ON public.submissions FOR INSERT
+    TO authenticated
+    WITH CHECK (
+        (SELECT auth.uid()) = student_id AND
+        EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = (SELECT auth.uid()) AND status = 'active'
+        )
+    );
+
+DROP POLICY IF EXISTS "Students can update own submissions" ON public.submissions;
+CREATE POLICY "Students can update own submissions"
+    ON public.submissions FOR UPDATE
+    TO authenticated
+    USING ((SELECT auth.uid()) = student_id)
+    WITH CHECK ((SELECT auth.uid()) = student_id);
+
+-- 4.2 Evaluations Policies
 DROP POLICY IF EXISTS "Faculty can manage evaluations" ON public.evaluations;
 DROP POLICY IF EXISTS "Faculty can view evaluations" ON public.evaluations;
 DROP POLICY IF EXISTS "Faculty can view allocated evaluations" ON public.evaluations;
 DROP POLICY IF EXISTS "Faculty can manage allocated evaluations" ON public.evaluations;
 
--- Create strict allocation-based SELECT policy on evaluations
 CREATE POLICY "Faculty can view allocated evaluations"
     ON public.evaluations FOR SELECT
     TO authenticated
@@ -251,7 +370,6 @@ CREATE POLICY "Faculty can view allocated evaluations"
         )
     );
 
--- Create strict allocation-based ALL (INSERT/UPDATE/DELETE) policy on evaluations
 CREATE POLICY "Faculty can manage allocated evaluations"
     ON public.evaluations FOR ALL
     TO authenticated
@@ -286,7 +404,37 @@ CREATE POLICY "Faculty can manage allocated evaluations"
         )
     );
 
+DROP POLICY IF EXISTS "Students can view own evaluations" ON public.evaluations;
+CREATE POLICY "Students can view own evaluations"
+    ON public.evaluations FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.submissions s
+            WHERE s.id = evaluations.submission_id AND s.student_id = (SELECT auth.uid())
+        )
+    );
+
+
 -- ------------------------------------------------------------------------------
--- 4. NOTIFY POSTGREST SCHEMA CACHE RELOAD
+-- 5. PERFORMANCE INDEXES FOR RLS EVALUATION JOINS
+-- Avoids sequential table scans during RLS policy evaluation
+-- ------------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_faculty_allocations_lookup
+    ON public.faculty_allocations(faculty_id, batch_id, subject_id);
+
+CREATE INDEX IF NOT EXISTS idx_submissions_practical_student
+    ON public.submissions(practical_id, student_id);
+
+CREATE INDEX IF NOT EXISTS idx_evaluations_submission_lookup
+    ON public.evaluations(submission_id);
+
+CREATE INDEX IF NOT EXISTS idx_profiles_batch_role_lookup
+    ON public.profiles(id, batch_id, role, status);
+
+
+-- ------------------------------------------------------------------------------
+-- 6. NOTIFY POSTGREST SCHEMA CACHE RELOAD
+-- Forces PostgREST to immediately pick up privilege revokes and policy updates
 -- ------------------------------------------------------------------------------
 NOTIFY pgrst, 'reload schema';
