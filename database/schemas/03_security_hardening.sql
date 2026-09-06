@@ -148,16 +148,34 @@ $$;
 -- ------------------------------------------------------------------------------
 
 -- Revoke default public execute on trigger functions and internal helpers
+REVOKE ALL ON FUNCTION public.handle_updated_at() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.handle_updated_at() FROM PUBLIC, anon, authenticated;
+
+REVOKE ALL ON FUNCTION public.handle_new_auth_user() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.handle_new_auth_user() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.get_user_role() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.get_user_role() TO authenticated;
 
-REVOKE EXECUTE ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.is_faculty_or_admin() TO authenticated;
+REVOKE ALL ON FUNCTION public.get_user_role() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.get_user_role() FROM PUBLIC, anon, authenticated;
 
--- Allow identifier lookup for unauthenticated sign-in verification
-GRANT EXECUTE ON FUNCTION public.lookup_user_by_identifier(text) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC, anon, authenticated;
+
+-- Pin search_path and revoke execute on rls_auto_enable dynamically if it exists
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN (
+        SELECT n.nspname, p.proname, pg_get_function_identity_arguments(p.oid) AS args
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.proname = 'rls_auto_enable'
+    ) LOOP
+        EXECUTE format('ALTER FUNCTION %I.%I(%s) SET search_path = ''''', r.nspname, r.proname, r.args);
+        EXECUTE format('REVOKE ALL ON FUNCTION %I.%I(%s) FROM PUBLIC', r.nspname, r.proname, r.args);
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %I.%I(%s) FROM PUBLIC, anon, authenticated', r.nspname, r.proname, r.args);
+    END LOOP;
+END $$;
 
 
 -- ------------------------------------------------------------------------------

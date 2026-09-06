@@ -109,7 +109,7 @@ def main():
     # CHECK 3 & 4: SECURITY DEFINER Execution Permissions & search_path
     # ------------------------------------------------------------------
     print("--- 3 & 4. Checking Execution Privileges on Security Definer Functions ---")
-    for func in ["handle_updated_at", "handle_new_auth_user", "get_user_role", "is_faculty_or_admin"]:
+    for func in ["handle_updated_at", "handle_new_auth_user", "get_user_role", "is_faculty_or_admin", "rls_auto_enable"]:
         rpc_url = f"{supabase_url}/rest/v1/rpc/{func}"
         rpc_res = requests.post(rpc_url, json={}, headers=headers_anon, timeout=10)
         print(f"• RPC '{func}' under anon role: HTTP {rpc_res.status_code}")
