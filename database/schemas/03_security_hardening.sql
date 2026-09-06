@@ -267,6 +267,43 @@ ALTER TABLE public.evaluations
 -- 5. CANONICAL PRACTICALS & TEST CASES SEED (for CS201P Data Structures)
 -- Populates the live canonical practicals catalog if not already present
 -- ------------------------------------------------------------------------------
+INSERT INTO public.colleges (code, name, city, state)
+VALUES ('CLG_GHRCEM', 'G H Raisoni College of Engineering and Management', 'Pune', 'Maharashtra')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO public.departments (college_id, code, name)
+VALUES (
+    (SELECT id FROM public.colleges WHERE code = 'CLG_GHRCEM' LIMIT 1),
+    'CSE-AI',
+    'Computer Science & Engineering (Artificial Intelligence)'
+)
+ON CONFLICT (college_id, code) DO NOTHING;
+
+INSERT INTO public.divisions (department_id, name, semester, academic_year)
+VALUES (
+    (SELECT id FROM public.departments WHERE code = 'CSE-AI' LIMIT 1),
+    'Division C',
+    3,
+    '2026-27'
+)
+ON CONFLICT (department_id, academic_year, semester, name) DO NOTHING;
+
+INSERT INTO public.batches (division_id, name)
+VALUES (
+    (SELECT id FROM public.divisions WHERE name = 'Division C' AND academic_year = '2026-27' LIMIT 1),
+    'C1'
+)
+ON CONFLICT (division_id, name) DO NOTHING;
+
+INSERT INTO public.subjects (department_id, code, name, semester)
+VALUES (
+    (SELECT id FROM public.departments WHERE code = 'CSE-AI' LIMIT 1),
+    'CS201P',
+    'Data Structures & Algorithms Lab',
+    3
+)
+ON CONFLICT (department_id, code) DO NOTHING;
+
 DO $$
 DECLARE
     v_subject_id UUID;
@@ -381,3 +418,9 @@ END $$;
 --   - public.timetable        (prototype timetable scheduling)
 -- They are preserved to avoid any data loss while canonical queries use the newer relational hierarchy.
 -- ------------------------------------------------------------------------------
+
+-- ------------------------------------------------------------------------------
+-- 7. NOTIFY POSTGREST SCHEMA RELOAD
+-- Forces PostgREST API to immediately reload its schema cache and expose new functions
+-- ------------------------------------------------------------------------------
+NOTIFY pgrst, 'reload schema';
