@@ -83,8 +83,8 @@ class EvaluationResponse(BaseModel):
     total_test_cases: int
     passed_test_cases: int
     pass_percentage: float
-    coding_marks_awarded: float = Field(..., description="Auto-graded coding score out of 5.0")
-    total_possible_marks: float = 5.0
+    coding_marks_awarded: float = Field(..., description="Auto-graded performing/coding score out of 3.0")
+    total_possible_marks: float = 3.0
     test_case_results: List[TestCaseResult]
     judge0_payloads: List[Dict[str, Any]]
     adaptive_tiering: AdaptiveTierResult
@@ -298,8 +298,8 @@ def evaluate_submission(payload: EvaluationRequest):
     total_count = len(test_cases)
     pass_rate = passed_count / total_count if total_count > 0 else 0.0
 
-    # NEP / College 10-mark distribution: Coding Performance = 5 Marks
-    coding_marks = round(pass_rate * 5.0, 1)
+    # Official SIH 10-mark distribution: Performing (Coding) Component = 3.0 Marks
+    coding_marks = round(pass_rate * 3.0, 2)
 
     # Adaptive tiering
     tier_result = calculate_adaptive_tier(
@@ -320,7 +320,7 @@ def evaluate_submission(payload: EvaluationRequest):
         passed_test_cases=passed_count,
         pass_percentage=round(pass_rate * 100, 1),
         coding_marks_awarded=coding_marks,
-        total_possible_marks=5.0,
+        total_possible_marks=3.0,
         test_case_results=test_results,
         judge0_payloads=judge0_payloads,
         adaptive_tiering=tier_result,
