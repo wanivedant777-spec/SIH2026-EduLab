@@ -9,8 +9,9 @@ This directory holds the PostgreSQL schemas, seed migrations, and automation spe
 ```
 database/
 ├── schemas/
-│   ├── 01_initial_schema.sql  # Users, practicals, submissions, evaluations, and RLS policies
-│   └── 02_seed_data.sql       # Seed practicals, test cases, and pedagogical metadata
+│   ├── 00_clean_reset.sql     # Complete wipe/reset script for clean-slate setup
+│   ├── 01_initial_schema.sql  # Dynamic relational hierarchy, RLS, triggers & 5-3-2 rubric
+│   └── 02_seed_data.sql       # Parameterized institutional setup & CSV ingestion template
 └── README.md                  # This integration guide
 ```
 
@@ -51,10 +52,10 @@ n8n connects to Supabase through **Database Webhooks** or **Supabase Realtime Tr
 
 1. **Practical Submission & Grading Digest**:
    - **Trigger**: Database Webhook on `public.submissions` (`INSERT`).
-   - **Action**: When `status = 'evaluated'`, compute summary stats and post a Slack/Discord/Email notification to the batch faculty with a direct link to the grading queue for write-up (3M) and viva (2M).
+   - **Action**: When `status = 'completed'`, compute summary stats and notify the allocated batch faculty with a direct link to the grading queue for write-up (5M) and viva (2M).
 
 2. **Excessive Tab-Switch / Focus-Loss Flagging**:
-   - **Trigger**: Database Webhook on `public.focus_events` (`INSERT`).
+   - **Trigger**: Database Webhook on `public.tab_switch_logs` (`INSERT`).
    - **Action**: If a student logs > 5 `window_blur` events in a single practical session, post an audit alert to faculty review queue (no auto-penalty, pure audit trail).
 
 3. **Adaptive Difficulty Recommendations**:

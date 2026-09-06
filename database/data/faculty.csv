@@ -1,0 +1,5 @@
+employee_id,email,name,department,subject_name
+FAC001,faculty001@college.edu,Faculty One,CSE-AI,Data Structures
+FAC002,faculty002@college.edu,Faculty Two,CSE-AI,introduction to Quantum computing
+FAC003,faculty003@college.edu,Faculty Three,CSE-AI,Operating Systems
+FAC004,faculty004@college.edu,Faculty Four,CSE-AI,Python for quantum computing

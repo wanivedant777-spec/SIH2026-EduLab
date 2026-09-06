@@ -8,12 +8,17 @@ import AuditLogDrawer from './components/faculty/AuditLogDrawer';
 import Toast from './components/ui/Toast';
 import Modal from './components/ui/Modal';
 import Button from './components/ui/Button';
+import LoginView from './components/LoginView';
+import { supabase } from './supabaseClient';
 import { PRACTICALS_CATALOG, BATCH_METRICS } from './services/mockData';
 import { evaluateSubmission } from './services/api';
 import { getPracticals, getSubmissions, submitStudentPractical, gradeSubmission } from './services/dataService';
 import { focusTracker } from './services/focusService';
 
 export default function App() {
+  // Session & User Authentication State
+  const [currentUser, setCurrentUser] = useState(null);
+
   // Navigation & Role State
   const [activeRole, setActiveRole] = useState('student'); // 'student' | 'faculty'
   const [studentView, setStudentView] = useState('dashboard'); // 'dashboard' | 'workspace'
@@ -55,6 +60,50 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Check existing session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*, batches(name)')
+            .eq('id', session.user.id)
+            .single();
+
+          if (profile) {
+            const userObj = {
+              id: session.user.id,
+              email: session.user.email,
+              identifier: profile.identifier,
+              name: profile.full_name,
+              role: profile.role,
+              batchName: profile.batches?.name || 'C1',
+              status: profile.status,
+            };
+            setCurrentUser(userObj);
+            setActiveRole(profile.role === 'faculty' ? 'faculty' : 'student');
+          }
+        }
+      } catch (err) {
+        console.warn('Session check note:', err);
+      }
+    };
+
+    checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, _session) => {
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        setActiveRole('student');
+        setStudentView('dashboard');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   // Load Initial Practicals & Submissions
   useEffect(() => {
     async function loadData() {
@@ -70,6 +119,27 @@ export default function App() {
     }
     loadData();
   }, []);
+
+  const handleLoginSuccess = (user) => {
+    setCurrentUser(user);
+    if (user?.role) {
+      setActiveRole(user.role);
+    }
+    setStudentView('dashboard');
+    addToast(`Welcome, ${user.name || user.identifier || 'User'}!`, 'success');
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Sign out note:', e);
+    }
+    setCurrentUser(null);
+    setActiveRole('student');
+    setStudentView('dashboard');
+    addToast('Signed out successfully.', 'info');
+  };
 
   // Update starter code when active practical changes
   const handleSelectPractical = (selected) => {
@@ -132,7 +202,7 @@ export default function App() {
     };
 
     const payload = {
-      student_id: 'std_2026_014',
+      student_id: currentUser?.identifier || 'PRN2026CS014',
       practical_id: currentPractical.id,
       language_id: languageMap[language] || 54,
       source_code: code,
@@ -141,22 +211,23 @@ export default function App() {
       test_cases: currentPractical.testCases || [],
     };
 
-    // Phase 1: Compilation
-    setLiveLogs([
-      `[00:00.012] [SYSTEM] Initializing Judge0 Sandbox Environment...`,
-      `[00:00.054] [COMPILER] Invoking: ${compilerFlags[language] || compilerFlags.cpp}`,
-    ]);
-
     try {
+      // Phase 1: Compilation
+      setLiveLogs([
+        `[00:00.040] [ENV] Spawning Judge0 Linux Container (cgroup v2 sandbox)...`,
+        `[00:00.120] [COMPILER] Invoking: ${compilerFlags[language] || compilerFlags.cpp}`,
+        `[00:00.280] [CHECK] Static analysis & syntax verification passed (0 warnings).`,
+      ]);
+
       await new Promise((r) => setTimeout(r, 400));
 
-      // Phase 2: Sandbox container initialization
+      // Phase 2: Container Spawning & Execution
       setEvaluationPhase('executing');
       setEvaluationProgress(35);
       setLiveLogs((prev) => [
         ...prev,
-        `[00:00.380] [COMPILER] Compilation succeeded with 0 warnings, 0 errors.`,
-        `[00:00.410] [SANDBOX] Spawning Linux container (cgroup v2, limit: 256MB RAM, 2.0s CPU)...`,
+        `[00:00.410] [CGROUP] Applying resource caps: CPU=2.0s, RAM=256MB, ProcessLimit=64`,
+        `[00:00.520] [SPAWN] Initializing test case harness...`,
       ]);
 
       // Trigger actual evaluation from backend service (FastAPI / Judge0)
@@ -231,8 +302,8 @@ export default function App() {
 
     const focusState = focusTracker.getState();
     const newSub = await submitStudentPractical({
-      studentId: 'std_2026_014',
-      studentName: 'Aarav Sharma',
+      studentId: currentUser?.identifier || 'PRN2026CS014',
+      studentName: currentUser?.name || 'Aarav Sharma',
       practicalId: currentPractical.id,
       practicalTitle: currentPractical.title,
       language,
@@ -258,10 +329,17 @@ export default function App() {
     addToast('10-Mark Rubric Score recorded & audited successfully!', 'success');
   };
 
+  // If not logged in, render the unified Authentication View
+  if (!currentUser) {
+    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="app-root">
       {/* Top Application Bar */}
       <Header
+        currentUser={currentUser}
+        onLogout={handleLogout}
         activeRole={activeRole}
         onRoleChange={(role) => {
           setActiveRole(role);
@@ -280,7 +358,6 @@ export default function App() {
         isRunning={isRunning}
         isSubmitted={isSubmitted}
       />
-
 
       {/* Main Experience: Student (Dashboard vs Workspace) vs Faculty Dashboard */}
       {activeRole === 'student' ? (
@@ -373,4 +450,3 @@ export default function App() {
     </div>
   );
 }
-

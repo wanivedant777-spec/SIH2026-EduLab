@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Send, Clock, Award, BookOpen, CheckCircle, Download, LayoutDashboard, Code2, ArrowRight } from 'lucide-react';
+import { Play, Send, Clock, Award, BookOpen, CheckCircle, Download, LayoutDashboard, Code2, ArrowRight, LogOut } from 'lucide-react';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import RoleSwitcher from './RoleSwitcher';
 import FocusTracker from './FocusTracker';
 
 export default function Header({
+  currentUser,
+  onLogout,
   activeRole,
   onRoleChange,
   studentView = 'dashboard',
@@ -189,6 +191,18 @@ export default function Header({
             size="sm"
           >
             Export Gradebook
+          </Button>
+        )}
+
+        {currentUser && (
+          <Button
+            variant="glass"
+            icon={LogOut}
+            onClick={onLogout}
+            size="sm"
+            title="Sign out of current account"
+          >
+            Logout
           </Button>
         )}
       </div>
