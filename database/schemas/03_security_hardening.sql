@@ -115,6 +115,33 @@ AS $$
     LIMIT 1;
 $$;
 
+-- Helper: get_user_role with immutable search_path
+CREATE OR REPLACE FUNCTION public.get_user_role()
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+    SELECT role FROM public.profiles WHERE id = (SELECT auth.uid());
+$$;
+
+-- Helper: is_faculty_or_admin with immutable search_path
+CREATE OR REPLACE FUNCTION public.is_faculty_or_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE id = (SELECT auth.uid())
+          AND role IN ('faculty', 'admin')
+          AND status = 'active'
+    );
+$$;
+
 -- ------------------------------------------------------------------------------
 -- 2. FUNCTION EXECUTION PERMISSION REVOCATION
 -- Enforces Principle of Least Privilege on internal database functions
@@ -225,6 +252,16 @@ ALTER TABLE public.practicals
     ALTER COLUMN max_coding_marks SET DEFAULT 3.00,
     ALTER COLUMN max_writeup_marks SET DEFAULT 5.00,
     ALTER COLUMN max_viva_marks SET DEFAULT 2.00;
+
+ALTER TABLE public.evaluations
+    DROP CONSTRAINT IF EXISTS evaluations_marks_performing_check,
+    DROP CONSTRAINT IF EXISTS evaluations_marks_writing_check,
+    DROP CONSTRAINT IF EXISTS evaluations_marks_viva_check;
+
+ALTER TABLE public.evaluations
+    ADD CONSTRAINT evaluations_marks_performing_check CHECK (marks_performing >= 0 AND marks_performing <= 3),
+    ADD CONSTRAINT evaluations_marks_writing_check CHECK (marks_writing >= 0 AND marks_writing <= 5),
+    ADD CONSTRAINT evaluations_marks_viva_check CHECK (marks_viva >= 0 AND marks_viva <= 2);
 
 -- ------------------------------------------------------------------------------
 -- 5. CANONICAL PRACTICALS & TEST CASES SEED (for CS201P Data Structures)
