@@ -103,11 +103,11 @@ export default function Header({
             <>
               <div className="rubric-pill">
                 <span className="rubric-segment">
-                  Coding <strong>5M</strong> (Auto)
+                  Performing <strong>3M</strong> (Auto)
                 </span>
                 <span style={{ color: 'var(--border-strong)' }}>•</span>
                 <span className="rubric-segment">
-                  Write-up <strong>3M</strong>
+                  Writing <strong>5M</strong> (Faculty)
                 </span>
                 <span style={{ color: 'var(--border-strong)' }}>•</span>
                 <span className="rubric-segment">
@@ -169,7 +169,7 @@ export default function Header({
                 onClick={onSubmitPractical}
                 disabled={isRunning || isSubmitted}
               >
-                {isSubmitted ? 'Submitted (5.0M)' : 'Submit Practical'}
+                {isSubmitted ? 'Submitted (3.0M)' : 'Submit Practical'}
               </Button>
             </>
           ) : (

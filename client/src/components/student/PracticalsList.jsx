@@ -11,7 +11,7 @@ export default function PracticalsList({ practicals, currentPracticalId, onSelec
       return {
         status: 'In Progress',
         statusVariant: 'warning',
-        score: '5.0 / 5.0 M (Auto)',
+        score: '3.0 / 3.0 M (Auto)',
         tier: 'Advanced',
         isCurrent: true,
       };

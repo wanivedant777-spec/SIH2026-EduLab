@@ -41,8 +41,8 @@ export default function FacultyDashboard({
   };
 
   const rubricAverages = batchMetrics?.rubricAverages || {
-    coding: 4.7,
-    writing: 2.4,
+    coding: 2.7,
+    writing: 4.4,
     viva: 1.5,
   };
 
@@ -51,7 +51,7 @@ export default function FacultyDashboard({
 
   const handleExportCSV = () => {
     // Generate simple NEP 2020 Gradebook CSV
-    const headers = ['PRN', 'Student Name', 'Roll Number', 'Practical', 'Coding (5M)', 'Writing (3M)', 'Viva (2M)', 'Total (10M)', 'Adaptive Tier', 'Integrity Status'];
+    const headers = ['PRN', 'Student Name', 'Roll Number', 'Practical', 'Coding (3M)', 'Writing (5M)', 'Viva (2M)', 'Total (10M)', 'Adaptive Tier', 'Integrity Status'];
     const rows = submissions.map((s) => [
       s.prn || 'PRN2026CS000',
       s.studentName,
@@ -299,7 +299,7 @@ export default function FacultyDashboard({
               </div>
               <div className="nep-credit-item">
                 <span className="credit-code">CS204P.2</span>
-                <span className="credit-title">Valgrind Memory Allocation &amp; Pointer Hierarchy</span>
+                <span className="credit-title">Dynamic Memory Allocation &amp; Pointer Operations</span>
                 <span className="credit-status">1 Credit</span>
               </div>
               <div className="nep-credit-item">

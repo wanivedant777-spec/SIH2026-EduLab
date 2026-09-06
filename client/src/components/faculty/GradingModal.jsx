@@ -10,7 +10,7 @@ export default function GradingModal({
   submission,
   onSaveGrade,
 }) {
-  const [writeupMarks, setWriteupMarks] = useState(submission?.writeupMarks || 2.5);
+  const [writeupMarks, setWriteupMarks] = useState(submission?.writeupMarks || 4.5);
   const [vivaMarks, setVivaMarks] = useState(submission?.vivaMarks || 1.5);
   const [feedback, setFeedback] = useState(submission?.feedback || '');
   const [checklist, setChecklist] = useState({
@@ -22,11 +22,12 @@ export default function GradingModal({
 
   if (!submission) return null;
 
-  const codingMarks = submission.codingMarks || 5.0;
+  const codingMarks = Math.min(3.0, submission.codingMarks !== undefined ? submission.codingMarks : 3.0);
   const currentTotal = Math.min(10.0, Math.round((parseFloat(codingMarks) + parseFloat(writeupMarks) + parseFloat(vivaMarks)) * 10) / 10);
 
   const handleSave = () => {
     onSaveGrade(submission.id, {
+      codingMarks,
       writeupMarks,
       vivaMarks,
       feedback,
@@ -116,7 +117,7 @@ export default function GradingModal({
           </div>
         </div>
 
-        {/* 1. Component: Coding Performance (Auto 5M) */}
+        {/* 1. Component: Performing / Coding Performance (Auto 3M) */}
         <div
           style={{
             background: 'var(--bg-surface)',
@@ -128,10 +129,10 @@ export default function GradingModal({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '13px', color: '#ffffff' }}>
               <Code2 size={16} color="var(--primary-light)" />
-              1. Coding Performance (Auto-Graded via Judge0)
+              1. Performing / Coding (Auto-Graded)
             </div>
             <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--success-light)', fontFamily: 'var(--font-mono)' }}>
-              {codingMarks} / 5.0 Marks
+              {codingMarks} / 3.0 Marks
             </div>
           </div>
 
@@ -158,7 +159,7 @@ export default function GradingModal({
           </div>
         </div>
 
-        {/* 2. Component: Write-Up Journal (3M) */}
+        {/* 2. Component: Write-Up Journal (5M) */}
         <div
           style={{
             background: 'var(--bg-surface)',
@@ -173,7 +174,7 @@ export default function GradingModal({
               2. Lab Write-Up / Journal Completeness (Faculty Graded)
             </div>
             <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--purple-light)', fontFamily: 'var(--font-mono)' }}>
-              {writeupMarks} / 3.0 Marks
+              {writeupMarks} / 5.0 Marks
             </div>
           </div>
 
@@ -181,7 +182,7 @@ export default function GradingModal({
             <input
               type="range"
               min="0"
-              max="3"
+              max="5"
               step="0.5"
               value={writeupMarks}
               onChange={(e) => setWriteupMarks(parseFloat(e.target.value))}

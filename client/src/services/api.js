@@ -16,24 +16,21 @@ export async function evaluateSubmission(payload) {
 
     return await res.json();
   } catch (err) {
-    console.warn('FastAPI backend connection note (using fallback simulation):', err.message);
-
-    // High-fidelity fallback evaluator to ensure robust demo continuity
+    console.warn('FastAPI evaluation microservice connection note:', err.message);
+    // Explicit simulation fallback when backend daemon is unreachable
     const testCases = payload.test_cases || [];
     const totalCount = testCases.length || 3;
-    const passedCount = totalCount;
-    const codingMarks = 5.0;
 
     const testCaseResults = testCases.map((tc, idx) => ({
       test_case_index: idx + 1,
       is_sample: tc.is_sample || false,
-      status: 'Passed',
-      passed: true,
-      stdout: tc.expected_output,
-      stderr: null,
+      status: 'Offline - Backend Unreachable',
+      passed: false,
+      stdout: '',
+      stderr: `Could not connect to evaluator microservice at ${API_BASE_URL}. Ensure FastAPI is running on port 8000.`,
       expected_output: tc.expected_output,
-      execution_time_sec: 0.018 + idx * 0.003,
-      memory_kb: 1240 + idx * 40,
+      execution_time_sec: 0.0,
+      memory_kb: 0,
     }));
 
     return {
@@ -41,22 +38,23 @@ export async function evaluateSubmission(payload) {
       student_id: payload.student_id,
       practical_id: payload.practical_id,
       language_id: payload.language_id,
-      status: 'Passed',
+      status: 'DEMO_OFFLINE_SIMULATION',
+      is_simulation: true,
       total_test_cases: totalCount,
-      passed_test_cases: passedCount,
-      pass_percentage: 100.0,
-      coding_marks_awarded: codingMarks,
-      total_possible_marks: 5.0,
+      passed_test_cases: 0,
+      pass_percentage: 0.0,
+      coding_marks_awarded: 0.0,
+      total_possible_marks: 3.0,
       test_case_results: testCaseResults,
       judge0_payloads: [],
       adaptive_tiering: {
-        assigned_tier: 'Advanced',
-        recommended_difficulty: 'Hard',
-        reasoning: 'Code correctly passed all test cases within optimal execution bounds. Recommended next curricular challenge.',
+        assigned_tier: 'Pending Evaluation',
+        recommended_difficulty: 'Standard',
+        reasoning: 'Backend evaluator offline. Code execution could not be verified by compiler daemon.',
         metrics: {
           attempt_count: payload.attempt_count || 1,
-          time_spent_seconds: payload.time_spent_seconds || 300,
-          pass_rate: 1.0,
+          time_spent_seconds: payload.time_spent_seconds || 0,
+          pass_rate: 0.0,
         },
       },
       evaluated_at: new Date().toISOString(),

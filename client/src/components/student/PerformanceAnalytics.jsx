@@ -38,41 +38,41 @@ export default function PerformanceAnalytics({ performance }) {
           </div>
 
           <div className="rubric-bars-stack">
-            {/* Coding (5M) */}
+            {/* Coding / Performing (3M) */}
             <div className="rubric-bar-item">
               <div className="rubric-bar-label-row">
-                <span className="rubric-category">1. Coding Performance (Auto-Graded)</span>
+                <span className="rubric-category">1. Performing / Coding (Auto-Graded)</span>
                 <span className="rubric-points">
-                  <strong>{p.codingAverage}</strong> / 5.0 M
+                  <strong>{p.codingAverage}</strong> / 3.0 M
                 </span>
               </div>
               <div className="progress-track">
                 <div
                   className="progress-fill fill-accent"
-                  style={{ width: `${(p.codingAverage / 5) * 100}%` }}
+                  style={{ width: `${Math.min(100, (p.codingAverage / 3) * 100)}%` }}
                 />
               </div>
               <span className="rubric-caption">
-                Evaluated by Judge0 container sandbox across hidden test cases & edge invariants.
+                Evaluated by test cases & algorithmic edge invariants.
               </span>
             </div>
 
-            {/* Write-Up (3M) */}
+            {/* Writing / Journal (5M) */}
             <div className="rubric-bar-item">
               <div className="rubric-bar-label-row">
-                <span className="rubric-category">2. Lab Journal & Algorithm Write-Up</span>
+                <span className="rubric-category">2. Writing / Lab Journal & Documentation</span>
                 <span className="rubric-points">
-                  <strong>{p.writeupAverage}</strong> / 3.0 M
+                  <strong>{p.writeupAverage}</strong> / 5.0 M
                 </span>
               </div>
               <div className="progress-track">
                 <div
                   className="progress-fill fill-success"
-                  style={{ width: `${(p.writeupAverage / 3) * 100}%` }}
+                  style={{ width: `${Math.min(100, (p.writeupAverage / 5) * 100)}%` }}
                 />
               </div>
               <span className="rubric-caption">
-                Verified: Aim, Step-by-Step Algorithm, Pseudocode, and Space/Time Complexity.
+                Verified by faculty: Aim, Algorithm, Pseudocode, and Complexity Analysis.
               </span>
             </div>
 

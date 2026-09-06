@@ -6,7 +6,7 @@ import Badge from '../ui/Badge';
 export default function SkillMap({ skills }) {
   const defaultSkills = [
     { name: 'Tree & Graph Algorithms', category: 'Data Structures', level: 94, tier: 'Advanced', milestone: 'Mastered AVL & BST Rotations' },
-    { name: 'Pointers & Memory Mgmt', category: 'Systems', level: 92, tier: 'Advanced', milestone: 'Zero memory leaks in Valgrind' },
+    { name: 'Pointers & Memory Mgmt', category: 'Systems', level: 92, tier: 'Advanced', milestone: 'Safe dynamic memory allocation & RAII' },
     { name: 'Complexity Analysis (Big-O)', category: 'Theory', level: 89, tier: 'Advanced', milestone: 'O(log N) optimal traversal proofs' },
     { name: 'Greedy & Graph Routing', category: 'Algorithms', level: 85, tier: 'Proficient', milestone: 'Dijkstra priority queue optimization' },
     { name: 'System & Concurrency', category: 'Operating Systems', level: 78, tier: 'Proficient', milestone: 'Round Robin preemptive scheduling' },

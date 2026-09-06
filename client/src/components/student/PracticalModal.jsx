@@ -101,7 +101,7 @@ export default function PracticalModal({
                   <Zap size={12} color="var(--warning-light)" /> {prac.difficulty}
                 </span>
                 <span style={{ color: 'var(--primary-light)', fontWeight: 500 }}>
-                  Rubric: 5 Coding + 3 Write-up + 2 Viva
+                  Rubric: 3 Performing + 5 Writing + 2 Viva
                 </span>
               </div>
             </div>

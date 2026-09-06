@@ -238,12 +238,16 @@ CREATE INDEX IF NOT EXISTS idx_allocations_faculty ON public.faculty_allocations
 
 -- Helper: Update updated_at timestamp
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS set_profiles_updated_at ON public.profiles;
 CREATE TRIGGER set_profiles_updated_at
@@ -297,7 +301,11 @@ GRANT EXECUTE ON FUNCTION public.lookup_user_by_identifier(text) TO anon, authen
 
 -- Option A Auth Trigger: Automatically Whitelist and Link User on Sign-Up
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 DECLARE
     matched_roster public.institutional_roster%ROWTYPE;
 BEGIN
@@ -370,6 +378,14 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
+
+-- Revoke execute permissions on internal functions
+REVOKE EXECUTE ON FUNCTION public.handle_updated_at() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.handle_new_auth_user() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_user_role() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_user_role() TO authenticated;
+REVOKE EXECUTE ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_faculty_or_admin() TO authenticated;
 
 -- ------------------------------------------------------------------------------
 -- 10. ROW LEVEL SECURITY (RLS) POLICIES
@@ -459,10 +475,23 @@ CREATE POLICY "Students can insert own submissions"
         )
     );
 
-CREATE POLICY "Faculty can view batch submissions"
+CREATE POLICY "Faculty can view allocated batch submissions"
     ON public.submissions FOR SELECT
     TO authenticated
-    USING (public.is_faculty_or_admin());
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles p
+            WHERE p.id = (SELECT auth.uid()) AND p.role = 'admin' AND p.status = 'active'
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM public.faculty_allocations fa
+            JOIN public.practicals pr ON pr.subject_id = fa.subject_id
+            JOIN public.profiles st ON st.id = submissions.student_id AND st.batch_id = fa.batch_id
+            WHERE fa.faculty_id = (SELECT auth.uid())
+              AND pr.id = submissions.practical_id
+        )
+    );
 
 -- Evaluations
 CREATE POLICY "Students can view own evaluations"
@@ -475,11 +504,58 @@ CREATE POLICY "Students can view own evaluations"
         )
     );
 
-CREATE POLICY "Faculty can manage evaluations"
+CREATE POLICY "Faculty can view allocated evaluations"
+    ON public.evaluations FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles p
+            WHERE p.id = (SELECT auth.uid()) AND p.role = 'admin' AND p.status = 'active'
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM public.submissions s
+            JOIN public.practicals pr ON pr.id = s.practical_id
+            JOIN public.profiles st ON st.id = s.student_id
+            JOIN public.faculty_allocations fa ON fa.batch_id = st.batch_id AND fa.subject_id = pr.subject_id
+            WHERE s.id = evaluations.submission_id
+              AND fa.faculty_id = (SELECT auth.uid())
+        )
+    );
+
+CREATE POLICY "Faculty can manage allocated evaluations"
     ON public.evaluations FOR ALL
     TO authenticated
-    USING (public.is_faculty_or_admin())
-    WITH CHECK (public.is_faculty_or_admin());
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.profiles p
+            WHERE p.id = (SELECT auth.uid()) AND p.role = 'admin' AND p.status = 'active'
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM public.submissions s
+            JOIN public.practicals pr ON pr.id = s.practical_id
+            JOIN public.profiles st ON st.id = s.student_id
+            JOIN public.faculty_allocations fa ON fa.batch_id = st.batch_id AND fa.subject_id = pr.subject_id
+            WHERE s.id = evaluations.submission_id
+              AND fa.faculty_id = (SELECT auth.uid())
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.profiles p
+            WHERE p.id = (SELECT auth.uid()) AND p.role = 'admin' AND p.status = 'active'
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM public.submissions s
+            JOIN public.practicals pr ON pr.id = s.practical_id
+            JOIN public.profiles st ON st.id = s.student_id
+            JOIN public.faculty_allocations fa ON fa.batch_id = st.batch_id AND fa.subject_id = pr.subject_id
+            WHERE s.id = evaluations.submission_id
+              AND fa.faculty_id = (SELECT auth.uid())
+        )
+    );
 
 -- Tab Switch Logs
 CREATE POLICY "Students can insert own tab logs"

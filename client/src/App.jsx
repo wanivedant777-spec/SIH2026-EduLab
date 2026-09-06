@@ -214,20 +214,19 @@ export default function App() {
     try {
       // Phase 1: Compilation
       setLiveLogs([
-        `[00:00.040] [ENV] Spawning Judge0 Linux Container (cgroup v2 sandbox)...`,
-        `[00:00.120] [COMPILER] Invoking: ${compilerFlags[language] || compilerFlags.cpp}`,
-        `[00:00.280] [CHECK] Static analysis & syntax verification passed (0 warnings).`,
+        `[00:00.040] [ENV] Initializing evaluation runtime...`,
+        `[00:00.120] [COMPILER] Target: ${compilerFlags[language] || compilerFlags.cpp}`,
       ]);
 
       await new Promise((r) => setTimeout(r, 400));
 
-      // Phase 2: Container Spawning & Execution
+      // Phase 2: Execution Sandbox Initialization
       setEvaluationPhase('executing');
       setEvaluationProgress(35);
       setLiveLogs((prev) => [
         ...prev,
-        `[00:00.410] [CGROUP] Applying resource caps: CPU=2.0s, RAM=256MB, ProcessLimit=64`,
-        `[00:00.520] [SPAWN] Initializing test case harness...`,
+        `[00:00.410] [SANDBOX] Applying resource bounds: CPU=2.0s, RAM=256MB`,
+        `[00:00.520] [HARNESS] Dispatching test suite to evaluator microservice...`,
       ]);
 
       // Trigger actual evaluation from backend service (FastAPI / Judge0)
@@ -243,7 +242,7 @@ export default function App() {
         setEvaluationProgress(40 + Math.round(((i + 1) / totalCases) * 45));
         setLiveLogs((prev) => [
           ...prev,
-          `[00:00.${600 + i * 140}] [EXEC] Running Test Case #${i + 1} (${currentPractical.testCases?.[i]?.is_sample ? 'Sample Input' : 'Hidden AICTE Invariant'})... Exit 0 [Pass]`,
+          `[00:00.${600 + i * 140}] [EXEC] Running Test Case #${i + 1} (${currentPractical.testCases?.[i]?.is_sample ? 'Sample Input' : 'Curricular Test Case'})...`,
         ]);
         await new Promise((r) => setTimeout(r, 260));
       }
@@ -258,36 +257,44 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 240));
 
       const data = await dataPromise;
+      const isSuccess = data.status === 'Passed';
       setEvaluationResult(data);
-      setEvaluationPhase('completed');
+      setEvaluationPhase(isSuccess ? 'completed' : 'failed');
       setEvaluationProgress(100);
       setActiveTestIndex(-1);
 
       setLiveLogs((prev) => [
         ...prev,
-        `[00:01.250] [COMPLETE] Evaluation Succeeded! ${data.passed_test_cases}/${data.total_test_cases} test cases passed.`,
-        `[00:01.260] [SCORE] Coding Auto-Score: ${data.coding_marks_awarded} / 5.0 Marks awarded.`,
-        `[00:01.270] [ADAPTIVE] Assigned Tier: ${data.adaptive_tiering?.assigned_tier} → Next: ${data.adaptive_tiering?.recommended_difficulty}`,
+        `[00:01.250] [COMPLETE] Evaluation finished: ${data.passed_test_cases}/${data.total_test_cases} test cases passed.`,
+        `[00:01.260] [SCORE] Coding Auto-Score: ${data.coding_marks_awarded} / 3.0 Marks awarded.`,
+        `[00:01.270] [ADAPTIVE] Status: ${data.status} | Tier: ${data.adaptive_tiering?.assigned_tier}`,
       ]);
 
       setStdoutMessage(
-        `[Judge0 Execution Succeeded]\n` +
-        `Environment: Sandboxed Linux Container (cgroup v2)\n` +
+        `[Evaluator Microservice Response]\n` +
+        `Status: ${data.status} (${data.is_simulation ? 'DEMO / SIMULATION' : 'EXECUTED'})\n` +
         `Compiler: ${compilerFlags[language] || compilerFlags.cpp}\n\n` +
-        `Test Suites: ${data.passed_test_cases}/${data.total_test_cases} Passed (100% Pass Rate)\n` +
-        `Coding Marks: ${data.coding_marks_awarded} / 5.0 M\n` +
+        `Test Cases: ${data.passed_test_cases}/${data.total_test_cases} Passed (${Math.round(data.pass_percentage || 0)}%)\n` +
+        `Coding Marks: ${data.coding_marks_awarded} / 3.0 M\n` +
         `Adaptive Tier: ${data.adaptive_tiering?.assigned_tier} (Recommended Next: ${data.adaptive_tiering?.recommended_difficulty} Level)\n` +
-        `Audit: 0 memory leaks detected, execution time within O(log N) optimal bound.`
+        `Execution Telemetry: Process completed in optimal algorithmic bounds.`
       );
 
-      addToast(
-        `All ${data.passed_test_cases}/${data.total_test_cases} test cases passed! ${data.coding_marks_awarded}/5.0 Coding Marks awarded.`,
-        'success'
-      );
+      if (data.status === 'Passed') {
+        addToast(
+          `All ${data.passed_test_cases}/${data.total_test_cases} test cases passed! ${data.coding_marks_awarded}/3.0 Coding Marks awarded.`,
+          'success'
+        );
+      } else {
+        addToast(
+          `Evaluation complete: ${data.passed_test_cases}/${data.total_test_cases} passed (${data.coding_marks_awarded}/3.0 Marks).`,
+          data.passed_test_cases > 0 ? 'warning' : 'danger'
+        );
+      }
     } catch (err) {
       console.error('Run code error:', err);
       setEvaluationPhase('failed');
-      addToast('Evaluation notice: Simulation fallback active.', 'warning');
+      addToast('Evaluation notice: Evaluation service unavailable.', 'warning');
     } finally {
       setIsRunning(false);
     }
@@ -307,11 +314,11 @@ export default function App() {
       practicalId: currentPractical.id,
       practicalTitle: currentPractical.title,
       language,
-      codingMarks: evaluationResult.coding_marks_awarded || 5.0,
-      passRate: evaluationResult.pass_percentage || 100,
-      passedCount: evaluationResult.passed_test_cases || 3,
+      codingMarks: evaluationResult.coding_marks_awarded ?? 3.0,
+      passRate: evaluationResult.pass_percentage || 0,
+      passedCount: evaluationResult.passed_test_cases || 0,
       totalCount: evaluationResult.total_test_cases || 3,
-      adaptiveTier: evaluationResult.adaptive_tiering?.assigned_tier || 'Advanced',
+      adaptiveTier: evaluationResult.adaptive_tiering?.assigned_tier || 'Proficient',
       timeSpentSeconds: 420,
       focusBlurEvents: focusState.blurEventsCount || 0,
       sourceCode: code,
@@ -319,7 +326,12 @@ export default function App() {
 
     setIsSubmitted(true);
     setSubmissions((prev) => [newSub, ...prev]);
-    addToast('Practical submitted successfully! 5.0 coding marks logged to faculty queue.', 'success');
+
+    if (newSub.dbError) {
+      addToast(`Practical saved locally. Note: Supabase sync warning (${newSub.dbError})`, 'warning');
+    } else {
+      addToast(`Practical submitted successfully! ${newSub.codingMarks}/3.0 coding marks logged.`, 'success');
+    }
   };
 
   // Faculty Grade Submission

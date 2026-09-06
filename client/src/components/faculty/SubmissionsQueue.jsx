@@ -203,13 +203,13 @@ export default function SubmissionsQueue({
               <th style={{ textAlign: 'center', width: '100px' }}>
                 <div className="th-content center">
                   <Code2 size={12} color="var(--primary-light)" />
-                  <span>Coding (5M)</span>
+                  <span>Coding (3M)</span>
                 </div>
               </th>
               <th style={{ textAlign: 'center', width: '90px' }}>
                 <div className="th-content center">
                   <FileText size={12} color="var(--cyan-light)" />
-                  <span>Writing (3M)</span>
+                  <span>Writing (5M)</span>
                 </div>
               </th>
               <th style={{ textAlign: 'center', width: '85px' }}>
@@ -286,20 +286,20 @@ export default function SubmissionsQueue({
                       </div>
                     </td>
 
-                    {/* 4. Coding (5M) */}
+                    {/* 4. Coding (3M) */}
                     <td className="cell-metric" style={{ textAlign: 'center' }}>
                       <div className="metric-pill pill-coding">
                         <span className="metric-val">{sub.codingMarks?.toFixed(1)}</span>
-                        <span className="metric-denom">/ 5.0</span>
+                        <span className="metric-denom">/ 3.0</span>
                       </div>
                     </td>
 
-                    {/* 5. Writing (3M) */}
+                    {/* 5. Writing (5M) */}
                     <td className="cell-metric" style={{ textAlign: 'center' }}>
                       {isGraded ? (
                         <div className="metric-pill pill-writing">
                           <span className="metric-val">{sub.writeupMarks?.toFixed(1)}</span>
-                          <span className="metric-denom">/ 3.0</span>
+                          <span className="metric-denom">/ 5.0</span>
                         </div>
                       ) : (
                         <span className="metric-pending-dash" title="Awaiting Faculty Review">—</span>

@@ -4,8 +4,12 @@ FastAPI Backend Service: Code Evaluation, Judge0 Payload Structuring & Adaptive 
 """
 
 import os
+import sys
 import uuid
 import logging
+import shutil
+import subprocess
+import tempfile
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -74,6 +78,7 @@ class TestCaseResult(BaseModel):
     expected_output: str
     execution_time_sec: Optional[float] = 0.02
     memory_kb: Optional[int] = 1240
+    is_simulation: bool = False
 
 
 class AdaptiveTierResult(BaseModel):
@@ -98,6 +103,7 @@ class EvaluationResponse(BaseModel):
     judge0_payloads: List[Dict[str, Any]]
     adaptive_tiering: AdaptiveTierResult
     evaluated_at: str
+    is_simulation: bool = False
 
 
 class TieringRequest(BaseModel):
@@ -189,10 +195,152 @@ def calculate_adaptive_tier(
     )
 
 
+def execute_locally(language_id: int, source_code: str, stdin: str) -> Dict[str, Any]:
+    """
+    Safely and truthfully executes student code locally when Judge0 container daemon is not reachable.
+    Supports Python 3 and C++20.
+    """
+    # 1. Python 3 (Judge0 language_id = 71)
+    if language_id == 71:
+        try:
+            start_t = datetime.now()
+            proc = subprocess.run(
+                [sys.executable, "-c", source_code],
+                input=stdin,
+                capture_output=True,
+                text=True,
+                timeout=2.5
+            )
+            dur = (datetime.now() - start_t).total_seconds()
+            if proc.returncode == 0:
+                return {
+                    "status": {"id": 3, "description": "Accepted"},
+                    "stdout": proc.stdout,
+                    "stderr": None,
+                    "time": str(round(dur, 3)),
+                    "memory": 1280,
+                    "is_simulated": False
+                }
+            else:
+                return {
+                    "status": {"id": 6, "description": "Runtime Error"},
+                    "stdout": proc.stdout,
+                    "stderr": proc.stderr,
+                    "time": str(round(dur, 3)),
+                    "memory": 1280,
+                    "is_simulated": False
+                }
+        except subprocess.TimeoutExpired:
+            return {
+                "status": {"id": 5, "description": "Time Limit Exceeded"},
+                "stdout": "",
+                "stderr": "Execution timed out (2.500s limit)",
+                "time": "2.500",
+                "memory": 1280,
+                "is_simulated": False
+            }
+        except Exception as exc:
+            return {
+                "status": {"id": 11, "description": "Execution Error"},
+                "stdout": "",
+                "stderr": str(exc),
+                "time": "0.000",
+                "memory": 1280,
+                "is_simulated": False
+            }
+
+    # 2. C++ (Judge0 language_id = 54 or 50 for C)
+    elif language_id in (54, 50):
+        compiler = shutil.which("g++") or shutil.which("clang++")
+        if compiler:
+            temp_dir = tempfile.mkdtemp(prefix="edulab_eval_")
+            src_file = os.path.join(temp_dir, "solution.cpp")
+            bin_file = os.path.join(temp_dir, "solution")
+            try:
+                with open(src_file, "w", encoding="utf-8") as f:
+                    f.write(source_code)
+
+                # Compile with -std=c++20
+                compile_res = subprocess.run(
+                    [compiler, "-O2", "-std=c++20", src_file, "-o", bin_file],
+                    capture_output=True,
+                    text=True,
+                    timeout=6.0
+                )
+                if compile_res.returncode != 0:
+                    return {
+                        "status": {"id": 6, "description": "Compilation Error"},
+                        "stdout": "",
+                        "stderr": compile_res.stderr,
+                        "time": "0.000",
+                        "memory": 0,
+                        "is_simulated": False
+                    }
+
+                # Execute compiled binary
+                start_t = datetime.now()
+                run_res = subprocess.run(
+                    [bin_file],
+                    input=stdin,
+                    capture_output=True,
+                    text=True,
+                    timeout=2.5
+                )
+                dur = (datetime.now() - start_t).total_seconds()
+                if run_res.returncode == 0:
+                    return {
+                        "status": {"id": 3, "description": "Accepted"},
+                        "stdout": run_res.stdout,
+                        "stderr": None,
+                        "time": str(round(dur, 3)),
+                        "memory": 1240,
+                        "is_simulated": False
+                    }
+                else:
+                    return {
+                        "status": {"id": 11, "description": "Runtime Error"},
+                        "stdout": run_res.stdout,
+                        "stderr": run_res.stderr,
+                        "time": str(round(dur, 3)),
+                        "memory": 1240,
+                        "is_simulated": False
+                    }
+            except subprocess.TimeoutExpired:
+                return {
+                    "status": {"id": 5, "description": "Time Limit Exceeded"},
+                    "stdout": "",
+                    "stderr": "Execution timed out (2.500s limit)",
+                    "time": "2.500",
+                    "memory": 1240,
+                    "is_simulated": False
+                }
+            except Exception as exc:
+                return {
+                    "status": {"id": 11, "description": "Execution Error"},
+                    "stdout": "",
+                    "stderr": str(exc),
+                    "time": "0.000",
+                    "memory": 1240,
+                    "is_simulated": False
+                }
+            finally:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # 3. Explicit simulation fallback (never fakes matching stdout)
+    return {
+        "status": {"id": 15, "description": "DEMO / SIMULATION (Judge0 Offline)"},
+        "stdout": "[DEMO / SIMULATION] Compiler daemon unavailable for language ID " + str(language_id),
+        "stderr": None,
+        "time": "0.015",
+        "memory": 1280,
+        "is_simulated": True
+    }
+
+
 def execute_via_judge0(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Attempts execution via Judge0 API. If Judge0 is not running locally,
-    returns a mock successful execution result for rapid prototyping.
+    falls back to truthful local execution or explicit simulation labeling.
     """
     headers = {"Content-Type": "application/json"}
     if JUDGE0_API_KEY:
@@ -202,25 +350,25 @@ def execute_via_judge0(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         url = f"{JUDGE0_API_URL.rstrip('/')}/submissions?wait=true"
-        resp = requests.post(url, json=payload, headers=headers, timeout=10)
+        resp = requests.post(url, json=payload, headers=headers, timeout=5)
         if resp.status_code in (200, 201):
-            return resp.json()
+            data = resp.json()
+            data["is_simulated"] = False
+            return data
         logger.warning("Judge0 returned status %d: %s", resp.status_code, resp.text[:200])
     except requests.exceptions.ConnectionError:
-        logger.info("Judge0 not reachable at %s — using simulation fallback", JUDGE0_API_URL)
+        logger.info("Judge0 not reachable at %s — using local runner", JUDGE0_API_URL)
     except requests.exceptions.Timeout:
         logger.warning("Judge0 request timed out at %s", JUDGE0_API_URL)
     except Exception as exc:
-        logger.error("Unexpected Judge0 error: %s", exc, exc_info=True)
+        logger.error("Unexpected Judge0 error: %s", exc)
 
-    # Simulation fallback (used when local Judge0 daemon is not yet started)
-    return {
-        "status": {"id": 3, "description": "Accepted"},
-        "stdout": payload.get("expected_output", "") + "\n",
-        "stderr": None,
-        "time": "0.015",
-        "memory": 1280,
-    }
+    # Truthful local execution
+    return execute_locally(
+        language_id=payload.get("language_id", 54),
+        source_code=payload.get("source_code", ""),
+        stdin=payload.get("stdin", "")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +436,19 @@ def evaluate_submission(payload: EvaluationRequest):
         res = execute_via_judge0(j0_payload)
         actual_output = (res.get("stdout") or "").strip()
         expected = tc.expected_output.strip()
-        is_passed = (actual_output == expected) or ("Accepted" in str(res.get("status", {})))
+        status_id = res.get("status", {}).get("id")
+        is_simulated = res.get("is_simulated", False)
+
+        # Truthful evaluation: pass/fail depends strictly on expected vs actual output comparison
+        if is_simulated:
+            is_passed = False
+            status_desc = "DEMO / SIMULATED"
+        elif res.get("stderr") or (status_id and status_id != 3):
+            is_passed = False
+            status_desc = res.get("status", {}).get("description") or "Execution Error"
+        else:
+            is_passed = (actual_output == expected)
+            status_desc = "Passed" if is_passed else "Wrong Answer"
 
         if is_passed:
             passed_count += 1
@@ -297,13 +457,14 @@ def evaluate_submission(payload: EvaluationRequest):
             TestCaseResult(
                 test_case_index=idx,
                 is_sample=tc.is_sample,
-                status="Passed" if is_passed else "Wrong Answer",
+                status=status_desc,
                 passed=is_passed,
                 stdout=actual_output,
                 stderr=res.get("stderr"),
                 expected_output=expected,
                 execution_time_sec=float(res.get("time") or 0.02),
                 memory_kb=int(res.get("memory") or 1240),
+                is_simulation=is_simulated,
             )
         )
 
@@ -321,22 +482,28 @@ def evaluate_submission(payload: EvaluationRequest):
     )
 
     submission_id = f"sub_{uuid.uuid4().hex[:12]}"
+    has_simulations = any(r.is_simulation for r in test_results)
+
+    final_status = "Passed" if pass_rate == 1.0 else ("Partially Passed" if passed_count > 0 else "Failed")
+    if has_simulations and pass_rate == 0.0:
+        final_status = "DEMO_SIMULATION"
 
     return EvaluationResponse(
         submission_id=submission_id,
         student_id=payload.student_id,
         practical_id=payload.practical_id,
         language_id=payload.language_id,
-        status="Passed" if pass_rate == 1.0 else ("Partially Passed" if passed_count > 0 else "Failed"),
+        status=final_status,
         total_test_cases=total_count,
         passed_test_cases=passed_count,
-        pass_percentage=round(pass_rate * 100, 1),
+        pass_percentage=round(pass_rate * 100.0, 1),
         coding_marks_awarded=coding_marks,
         total_possible_marks=3.0,
         test_case_results=test_results,
         judge0_payloads=judge0_payloads,
         adaptive_tiering=tier_result,
-        evaluated_at=datetime.utcnow().isoformat() + "Z",
+        evaluated_at=datetime.utcnow().isoformat(),
+        is_simulation=has_simulations,
     )
 
 
