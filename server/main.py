@@ -4,15 +4,21 @@ FastAPI Backend Service: Code Evaluation, Judge0 Payload Structuring & Adaptive 
 """
 
 import os
-import time
 import uuid
+import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import requests
+
+# Load environment variables from .env file
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Practical Lab Management Evaluation API",
@@ -20,10 +26,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for frontend development
+# CORS origins from environment (comma-separated), with safe development defaults
+_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+ALLOWED_ORIGINS = [origin.strip() for origin in _cors_origins.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -193,12 +202,16 @@ def execute_via_judge0(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         url = f"{JUDGE0_API_URL.rstrip('/')}/submissions?wait=true"
-        resp = requests.post(url, json=payload, headers=headers, timeout=5)
+        resp = requests.post(url, json=payload, headers=headers, timeout=10)
         if resp.status_code in (200, 201):
             return resp.json()
-    except Exception:
-        # Fallback simulation when Judge0 server isn't running
-        pass
+        logger.warning("Judge0 returned status %d: %s", resp.status_code, resp.text[:200])
+    except requests.exceptions.ConnectionError:
+        logger.info("Judge0 not reachable at %s — using simulation fallback", JUDGE0_API_URL)
+    except requests.exceptions.Timeout:
+        logger.warning("Judge0 request timed out at %s", JUDGE0_API_URL)
+    except Exception as exc:
+        logger.error("Unexpected Judge0 error: %s", exc, exc_info=True)
 
     # Simulation fallback (used when local Judge0 daemon is not yet started)
     return {
@@ -230,7 +243,6 @@ def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "judge0_configured_url": JUDGE0_API_URL,
     }
 
 
@@ -341,6 +353,149 @@ def evaluate_adaptive_tier(req: TieringRequest):
     )
 
 
+# ---------------------------------------------------------------------------
+# Institutional Authentication & Server-Side Role Verification
+# ---------------------------------------------------------------------------
+class AuthLoginRequest(BaseModel):
+    identifier: str = Field(..., description="Student PRN (e.g. GHR2025AI001) or Faculty Employee ID (e.g. FAC001)")
+    password: str = Field(..., description="Institutional account password")
+
+
+@app.post("/api/auth/login", tags=["Authentication"])
+def institutional_login(req: AuthLoginRequest):
+    """
+    Unified Institutional Login Endpoint.
+    Never asks if the user is a student or faculty.
+    Resolves the identifier securely from the database roster, verifies or provisions credentials,
+    and returns the verified profile and role.
+    """
+    clean_id = req.identifier.strip().upper()
+    if not clean_id or not req.password:
+        raise HTTPException(status_code=400, detail="Both Institutional ID and Password are required.")
+
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+    if not supabase_url or not service_key:
+        logger.error("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured")
+        raise HTTPException(status_code=500, detail="Authentication service is not configured. Contact administrator.")
+
+    admin_headers = {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+        "Content-Type": "application/json"
+    }
+
+    # 1. Lookup the identifier in the institutional roster
+    roster_url = f"{supabase_url}/rest/v1/institutional_roster?identifier=eq.{clean_id}&select=*,batches(name),departments(name)"
+    try:
+        res = requests.get(roster_url, headers=admin_headers, timeout=10)
+    except Exception as e:
+        logger.error("Database connection error during login: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Unable to reach authentication service. Please try again later.")
+
+    if res.status_code != 200 or not res.json():
+        # Reject unauthorized identifiers immediately
+        raise HTTPException(
+            status_code=401,
+            detail="Institutional ID is not recognized in the college database. Access denied."
+        )
+
+    roster_entry = res.json()[0]
+    email = roster_entry.get("email")
+    role = roster_entry.get("role", "student")
+    full_name = roster_entry.get("full_name", "Member")
+    batch_name = "C1"
+    if isinstance(roster_entry.get("batches"), dict):
+        batch_name = roster_entry["batches"].get("name", "C1")
+
+    # 2. Attempt Supabase Auth sign-in
+    token_url = f"{supabase_url}/auth/v1/token?grant_type=password"
+    session_data = None
+
+    try:
+        login_res = requests.post(
+            token_url,
+            headers={"apikey": service_key, "Content-Type": "application/json"},
+            json={"email": email, "password": req.password},
+            timeout=10
+        )
+        if login_res.status_code == 200:
+            session_data = login_res.json()
+        else:
+            # First-time sign in: auto-provision confirmed account via Admin API without email limits
+            admin_create_url = f"{supabase_url}/auth/v1/admin/users"
+            admin_res = requests.post(
+                admin_create_url,
+                headers=admin_headers,
+                json={
+                    "email": email,
+                    "password": req.password,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "full_name": full_name,
+                        "role": role,
+                        "identifier": clean_id
+                    }
+                },
+                timeout=10
+            )
+            if admin_res.status_code in (200, 201):
+                # Account successfully provisioned, now login
+                retry_login = requests.post(
+                    token_url,
+                    headers={"apikey": service_key, "Content-Type": "application/json"},
+                    json={"email": email, "password": req.password},
+                    timeout=10
+                )
+                if retry_login.status_code == 200:
+                    session_data = retry_login.json()
+            else:
+                # If account exists but password was wrong
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid password for this institutional account. Please check your credentials."
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Authentication service error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Authentication service encountered an error. Please try again later.")
+
+    user_id = session_data.get("user", {}).get("id") if session_data else None
+
+    # 3. Retrieve verified profile
+    prof_url = f"{supabase_url}/rest/v1/profiles?email=eq.{email}&select=*,batches(name)"
+    try:
+        prof_res = requests.get(prof_url, headers=admin_headers, timeout=10)
+        if prof_res.status_code == 200 and prof_res.json():
+            p = prof_res.json()[0]
+            user_id = p.get("id") or user_id
+            role = p.get("role") or role
+            full_name = p.get("full_name") or full_name
+            if isinstance(p.get("batches"), dict):
+                batch_name = p["batches"].get("name", batch_name)
+    except Exception:
+        pass
+
+    return {
+        "status": "success",
+        "session": session_data,
+        "profile": {
+            "id": user_id,
+            "email": email,
+            "identifier": clean_id,
+            "name": full_name,
+            "role": role,
+            "batchName": batch_name,
+            "status": "active"
+        }
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host=host, port=port, reload=True)
+

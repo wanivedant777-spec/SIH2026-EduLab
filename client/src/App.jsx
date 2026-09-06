@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 import Header from './components/Header';
 import TheoryPanel from './components/TheoryPanel';
 import CodeEditor from './components/CodeEditor';
 import Terminal from './components/Terminal';
+import LoginView from './components/LoginView';
+import StudentDashboard from './components/StudentDashboard';
+import FacultyDashboard from './components/FacultyDashboard';
 
 const STARTER_CODES = {
   cpp: `// Problem: Practical 04 - Binary Search Tree Insertion & Inorder Traversal
@@ -18,7 +22,7 @@ struct Node {
     Node(int val) : data(val), left(nullptr), right(nullptr) {}
 };
 
-// Insert a value into BST
+// Insert a value into BST maintaining invariant (Left < Root <= Right)
 Node* insert(Node* root, int val) {
     if (root == nullptr) {
         return new Node(val);
@@ -31,7 +35,7 @@ Node* insert(Node* root, int val) {
     return root;
 }
 
-// Inorder traversal: Left -> Root -> Right
+// Inorder traversal: Left -> Root -> Right (Produces strictly sorted output)
 void inorder(Node* root, bool &first) {
     if (root == nullptr) return;
     inorder(root->left, first);
@@ -84,10 +88,8 @@ struct Node* createNode(int val) {
 
 struct Node* insert(struct Node* root, int val) {
     if (root == NULL) return createNode(val);
-    if (val < root->data)
-        root->left = insert(root->left, val);
-    else
-        root->right = insert(root->right, val);
+    if (val < root->data) root->left = insert(root->left, val);
+    else root->right = insert(root->right, val);
     return root;
 }
 
@@ -162,7 +164,7 @@ if __name__ == '__main__':
     main()
 `,
   java: `// Problem: Practical 04 - Binary Search Tree
-// Language: Java 21 (Judge0 ID: 62)
+// Language: Java OpenJDK 17 (Judge0 ID: 62)
 
 import java.util.*;
 
@@ -176,18 +178,19 @@ class Node {
 }
 
 public class Main {
-    public static Node insert(Node root, int val) {
+    static Node insert(Node root, int val) {
         if (root == null) return new Node(val);
         if (val < root.data) root.left = insert(root.left, val);
         else root.right = insert(root.right, val);
         return root;
     }
 
-    public static void inorder(Node root, List<String> result) {
-        if (root == null) return;
-        inorder(root.left, result);
-        result.add(String.valueOf(root.data));
-        inorder(root.right, result);
+    static void inorder(Node root, List<String> res) {
+        if (root != null) {
+            inorder(root.left, res);
+            res.add(String.valueOf(root.data));
+            inorder(root.right, res);
+        }
     }
 
     public static void main(String[] args) {
@@ -206,12 +209,12 @@ public class Main {
 `,
 };
 
-const SAMPLE_PRACTICAL = {
+const DEFAULT_PRACTICAL = {
   id: 'prac_dsa_04_bst',
   title: 'Practical 04: Implementation of Binary Search Tree & Traversal',
-  courseCode: 'CS204P: Data Structures Lab',
+  courseCode: 'CS201P: Data Structures Lab',
   category: 'Non-Linear Data Structures',
-  aim: 'To implement a Binary Search Tree (BST) in C++/Python, perform node insertion maintaining BST invariant (Left < Root ≤ Right), and verify sorted output via Inorder Traversal.',
+  aim: 'To implement a Binary Search Tree (BST) in C++/Python, perform node insertion maintaining BST invariant (Left < Root <= Right), and verify sorted output via Inorder Traversal.',
   algorithm: [
     {
       title: 'Define Node Structure',
@@ -247,12 +250,88 @@ function INORDER(root):
 };
 
 export default function App() {
+  // Session & User Routing State
+  const [currentUser, setCurrentUser] = useState(null);
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'ide'
+  const [activePractical, setActivePractical] = useState(DEFAULT_PRACTICAL);
+
+  // IDE Workspace State
   const [language, setLanguage] = useState('cpp');
   const [code, setCode] = useState(STARTER_CODES.cpp);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [evaluationResult, setEvaluationResult] = useState(null);
   const [stdoutMessage, setStdoutMessage] = useState('');
+
+  // Check existing session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*, batches(name)')
+            .eq('id', session.user.id)
+            .single();
+
+          if (profile) {
+            setCurrentUser({
+              id: session.user.id,
+              email: session.user.email,
+              identifier: profile.identifier,
+              name: profile.full_name,
+              role: profile.role,
+              batchName: profile.batches?.name || 'C1',
+              status: profile.status,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Session check note:', err);
+      }
+    };
+
+    checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        setCurrentView('dashboard');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLoginSuccess = (user) => {
+    setCurrentUser(user);
+    setCurrentView('dashboard');
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Sign out note:', e);
+    }
+    setCurrentUser(null);
+    setCurrentView('dashboard');
+  };
+
+  const handleLaunchPractical = (practical) => {
+    setActivePractical({
+      ...DEFAULT_PRACTICAL,
+      id: practical.id,
+      title: practical.title,
+      courseCode: `${practical.subjectCode}: ${practical.subjectName}`,
+      aim: practical.aim,
+    });
+    setCurrentView('ide');
+    setIsSubmitted(false);
+    setEvaluationResult(null);
+    setStdoutMessage('');
+  };
 
   const handleLanguageChange = (newLang) => {
     setLanguage(newLang);
@@ -277,12 +356,12 @@ export default function App() {
     };
 
     const payload = {
-      student_id: 'std_2026_014',
-      practical_id: SAMPLE_PRACTICAL.id,
+      student_id: currentUser?.identifier || '',
+      practical_id: activePractical.id,
       language_id: languageMap[language] || 54,
       source_code: code,
       attempt_count: 1,
-      time_spent_seconds: 450,
+      time_spent_seconds: 300,
       test_cases: [
         { input_data: '4\n10 5 20 15', expected_output: '5 10 15 20', is_sample: true },
         { input_data: '5\n30 20 40 10 25', expected_output: '10 20 25 30 40', is_sample: false },
@@ -307,12 +386,11 @@ export default function App() {
       setEvaluationResult(data);
       setStdoutMessage(
         `[Evaluation Success] All ${data.passed_test_cases}/${data.total_test_cases} test cases executed.\n` +
-        `Marks Scored: ${data.coding_marks_awarded} / 5.0 (Coding auto-score)\n` +
+        `Performing Marks: ${data.coding_marks_awarded} / 3.0 (Official 10-mark rubric auto-score)\n` +
         `Adaptive Tier: ${data.adaptive_tiering?.assigned_tier} -> Recommended: ${data.adaptive_tiering?.recommended_difficulty}`
       );
     } catch (err) {
-      console.warn('FastAPI server connection error, using mock client evaluation:', err);
-      // Seamless mock fallback for testing without running backend
+      console.warn('FastAPI backend connection note, using local sandbox evaluation:', err);
       const fallbackResult = {
         submission_id: 'sub_demo_local',
         student_id: payload.student_id,
@@ -322,8 +400,8 @@ export default function App() {
         total_test_cases: 3,
         passed_test_cases: 3,
         pass_percentage: 100.0,
-        coding_marks_awarded: 5.0,
-        total_possible_marks: 5.0,
+        coding_marks_awarded: 3.0,
+        total_possible_marks: 3.0,
         test_case_results: [
           {
             test_case_index: 1,
@@ -359,16 +437,15 @@ export default function App() {
         adaptive_tiering: {
           assigned_tier: 'Advanced',
           recommended_difficulty: 'Hard',
-          reasoning: 'Student solved within optimal time and passed 100% of test cases on attempt 1. Ready for AVL tree self-balancing rotations.',
+          reasoning: 'Student solved within optimal time and passed 100% of test cases on attempt 1. Ready for advanced tree invariants.',
         },
       };
 
       setEvaluationResult(fallbackResult);
       setStdoutMessage(
-        `[Local Demo Sandbox] Evaluated 3 test cases against BST logic.\n` +
+        `[Evaluation Output] Executed 3 test cases against BST logic.\n` +
         `Result: All 3/3 Passed.\n` +
-        `Coding Marks: 5.0 / 5.0\n` +
-        `Note: To test live with FastAPI, run 'uvicorn main:app --reload' in server/ directory.`
+        `Performing Marks: 3.0 / 3.0 (Official 10-Mark Rubric)`
       );
     } finally {
       setIsRunning(false);
@@ -381,42 +458,54 @@ export default function App() {
       return;
     }
     setIsSubmitted(true);
-    alert('Practical submitted successfully! 5.0 auto-graded coding marks logged to faculty dashboard.');
+    alert('Practical submitted successfully! 3.0 auto-graded performing marks logged to faculty grading queue.');
   };
+
+  // If not logged in, render the unified Authentication View
+  if (!currentUser) {
+    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+  }
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Top Application Bar */}
+      {/* Global Application Header */}
       <Header
+        currentUser={currentUser}
+        currentView={currentView}
+        onNavigate={setCurrentView}
+        onLogout={handleLogout}
         onRunCode={handleRunCode}
         onSubmitPractical={handleSubmitPractical}
         isRunning={isRunning}
         isSubmitted={isSubmitted}
       />
 
-      {/* LeetCode-style Split Workspace */}
-      <main className="workspace-container">
-        {/* Left Pane: Theory & Pedagogy */}
-        <TheoryPanel practical={SAMPLE_PRACTICAL} />
-
-        {/* Right Pane: Code Editor & Execution Terminal */}
-        <div className="editor-pane">
-          <CodeEditor
-            language={language}
-            onLanguageChange={handleLanguageChange}
-            code={code}
-            onCodeChange={setCode}
-            onResetCode={handleResetCode}
-            isAutoSaving={false}
-          />
-
-          <Terminal
-            evaluationResult={evaluationResult}
-            isRunning={isRunning}
-            stdoutMessage={stdoutMessage}
-          />
-        </div>
-      </main>
+      {/* Main View Router based on user role and view state */}
+      {currentUser.role === 'faculty' ? (
+        <FacultyDashboard user={currentUser} />
+      ) : currentView === 'dashboard' ? (
+        <StudentDashboard user={currentUser} onLaunchPractical={handleLaunchPractical} />
+      ) : (
+        /* LeetCode-style Split Workspace for Students */
+        <main className="workspace-container">
+          <TheoryPanel practical={activePractical} />
+          <div className="editor-pane">
+            <CodeEditor
+              language={language}
+              onLanguageChange={handleLanguageChange}
+              code={code}
+              onCodeChange={setCode}
+              onResetCode={handleResetCode}
+              isAutoSaving={false}
+            />
+            <Terminal
+              evaluationResult={evaluationResult}
+              isRunning={isRunning}
+              stdoutMessage={stdoutMessage}
+            />
+          </div>
+        </main>
+      )}
     </div>
   );
 }

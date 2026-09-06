@@ -275,6 +275,26 @@ AS $$
     );
 $$;
 
+-- Helper: Lookup email by Registration No / Employee ID (for seamless login)
+CREATE OR REPLACE FUNCTION public.lookup_user_by_identifier(p_identifier text)
+RETURNS TABLE (
+    email text,
+    role text,
+    full_name text
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = ''
+STABLE
+AS $$
+    SELECT email, role, full_name
+    FROM public.institutional_roster
+    WHERE UPPER(identifier) = UPPER(TRIM(p_identifier))
+    LIMIT 1;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.lookup_user_by_identifier(text) TO anon, authenticated;
+
 -- Option A Auth Trigger: Automatically Whitelist and Link User on Sign-Up
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS TRIGGER AS $$
