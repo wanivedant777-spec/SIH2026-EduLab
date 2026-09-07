@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Header from './components/common/Header';
 import StudentDashboard from './components/student/StudentDashboard';
 import StudentWorkspace from './components/student/StudentWorkspace';
@@ -10,27 +10,36 @@ import Modal from './components/ui/Modal';
 import Button from './components/ui/Button';
 import LoginView from './components/LoginView';
 import { supabase } from './supabaseClient';
-import { PRACTICALS_CATALOG, BATCH_METRICS } from './services/mockData';
 import { evaluateSubmission } from './services/api';
-import { getPracticals, getSubmissions, submitStudentPractical, gradeSubmission } from './services/dataService';
+import {
+  getPracticals,
+  getSubmissions,
+  submitStudentPractical,
+  gradeSubmission,
+  getStudentProfile,
+  getFacultyAllocations,
+  computeBatchMetrics,
+} from './services/dataService';
 import { focusTracker } from './services/focusService';
 
 export default function App() {
   // Session & User Authentication State
   const [currentUser, setCurrentUser] = useState(null);
+  const [studentProfile, setStudentProfile] = useState(null);
+  const [facultyAllocations, setFacultyAllocations] = useState([]);
 
   // Navigation & Role State
   const [activeRole, setActiveRole] = useState('student'); // 'student' | 'faculty'
   const [studentView, setStudentView] = useState('dashboard'); // 'dashboard' | 'workspace'
-  const [practicals, setPracticals] = useState(PRACTICALS_CATALOG);
-  const [currentPractical, setCurrentPractical] = useState(PRACTICALS_CATALOG[0]);
+  const [practicals, setPracticals] = useState([]);
+  const [currentPractical, setCurrentPractical] = useState(null);
   const [isPracticalModalOpen, setIsPracticalModalOpen] = useState(false);
   const [isAuditDrawerOpen, setIsAuditDrawerOpen] = useState(false);
   const [isResetConfirmModalOpen, setIsResetConfirmModalOpen] = useState(false);
 
   // Student Workspace & Evaluation State
   const [language, setLanguage] = useState('cpp');
-  const [code, setCode] = useState(PRACTICALS_CATALOG[0].starterCodes.cpp);
+  const [code, setCode] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [evaluationPhase, setEvaluationPhase] = useState('idle'); // 'idle' | 'compiling' | 'executing' | 'testing' | 'tiering' | 'completed' | 'failed'
   const [evaluationProgress, setEvaluationProgress] = useState(0);
@@ -41,20 +50,21 @@ export default function App() {
   const [stdoutMessage, setStdoutMessage] = useState('');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
 
-  // Faculty State
+  // Data Loading & Sync States
   const [submissions, setSubmissions] = useState([]);
-  const [batchMetrics] = useState(BATCH_METRICS);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [dataError, setDataError] = useState(null);
 
   // Toast System
   const [toasts, setToasts] = useState([]);
 
-  const addToast = (message, type = 'info') => {
+  const addToast = useCallback((message, type = 'info') => {
     const id = `toast_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
-  };
+  }, []);
 
   const dismissToast = (id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -72,19 +82,18 @@ export default function App() {
             .eq('id', session.user.id)
             .single();
 
-          if (profile) {
-            const userObj = {
-              id: session.user.id,
-              email: session.user.email,
-              identifier: profile.identifier,
-              name: profile.full_name,
-              role: profile.role,
-              batchName: profile.batches?.name || 'C1',
-              status: profile.status,
-            };
-            setCurrentUser(userObj);
-            setActiveRole(profile.role === 'faculty' ? 'faculty' : 'student');
-          }
+          const role = profile?.role || session.user.user_metadata?.role || 'student';
+          const userObj = {
+            id: session.user.id,
+            email: session.user.email,
+            identifier: profile?.identifier || session.user.user_metadata?.identifier || 'GHR2025AI001',
+            name: profile?.full_name || session.user.user_metadata?.full_name || 'User',
+            role,
+            batchName: profile?.batches?.name || 'C1',
+            status: profile?.status || 'active',
+          };
+          setCurrentUser(userObj);
+          setActiveRole(role === 'faculty' ? 'faculty' : 'student');
         }
       } catch (err) {
         console.warn('Session check note:', err);
@@ -96,29 +105,81 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, _session) => {
       if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
+        setStudentProfile(null);
+        setFacultyAllocations([]);
         setActiveRole('student');
         setStudentView('dashboard');
+        setPracticals([]);
+        setSubmissions([]);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Load Initial Practicals & Submissions
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const pr = await getPracticals();
-        if (pr && pr.length) setPracticals(pr);
+  // Fetch real data from Supabase for authenticated user
+  const loadData = useCallback(async () => {
+    if (!currentUser) return;
 
-        const sub = await getSubmissions();
-        if (sub && sub.length) setSubmissions(sub);
-      } catch (err) {
-        console.warn('Data initialization note:', err);
+    setIsLoadingData(true);
+    setDataError(null);
+
+    try {
+      // 1. Fetch practicals
+      const prs = await getPracticals();
+      setPracticals(prs);
+
+      if (prs.length > 0) {
+        setCurrentPractical((prev) => {
+          if (!prev) return prs[0];
+          const matched = prs.find((p) => p.id === prev.id);
+          return matched || prs[0];
+        });
       }
+
+      // 2. Role-specific queries
+      if (currentUser.role === 'student') {
+        // Fetch student profile hierarchy
+        try {
+          const prof = await getStudentProfile(currentUser.id);
+          if (prof) setStudentProfile(prof);
+        } catch (e) {
+          console.warn('Student profile query notice:', e.message);
+        }
+
+        // Fetch student's own submissions
+        const subs = await getSubmissions(currentUser.id);
+        setSubmissions(subs);
+      } else if (currentUser.role === 'faculty') {
+        // Fetch faculty allocations
+        try {
+          const allocs = await getFacultyAllocations(currentUser.id);
+          setFacultyAllocations(allocs);
+        } catch (e) {
+          console.warn('Faculty allocations query notice:', e.message);
+        }
+
+        // Fetch all authorized batch submissions
+        const subs = await getSubmissions();
+        setSubmissions(subs);
+      }
+    } catch (err) {
+      console.error('Data loading failure:', err);
+      setDataError(err.message || 'Failed to sync with live Supabase database.');
+      addToast(`Database sync note: ${err.message}`, 'danger');
+    } finally {
+      setIsLoadingData(false);
     }
-    loadData();
-  }, []);
+  }, [currentUser, addToast]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const timer = setTimeout(() => {
+        loadData();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [currentUser, loadData]);
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
@@ -126,7 +187,7 @@ export default function App() {
       setActiveRole(user.role);
     }
     setStudentView('dashboard');
-    addToast(`Welcome, ${user.name || user.identifier || 'User'}!`, 'success');
+    addToast(`Welcome, ${user.name || user.identifier || 'User'}! Authenticated via Supabase.`, 'success');
   };
 
   const handleLogout = async () => {
@@ -136,38 +197,45 @@ export default function App() {
       console.warn('Sign out note:', e);
     }
     setCurrentUser(null);
+    setStudentProfile(null);
+    setFacultyAllocations([]);
     setActiveRole('student');
     setStudentView('dashboard');
+    setPracticals([]);
+    setSubmissions([]);
     addToast('Signed out successfully.', 'info');
   };
 
   // Update starter code when active practical changes
   const handleSelectPractical = (selected) => {
     setCurrentPractical(selected);
-    setCode(selected.starterCodes[language] || selected.starterCodes.cpp || '');
+    const template = selected.starterCodes?.[language] || selected.starterCodes?.cpp || '';
+    setCode(template);
     setEvaluationResult(null);
     setEvaluationPhase('idle');
     setEvaluationProgress(0);
     setActiveTestIndex(-1);
     setIsSubmitted(false);
     setStdoutMessage('');
-    addToast(`Loaded ${selected.title.split(':')[0]} into workspace`, 'info');
+    addToast(`Loaded ${selected.title?.split(':')[0] || 'Practical'} into workspace`, 'info');
   };
 
   // Language switch
   const handleLanguageChange = (newLang) => {
     setLanguage(newLang);
-    setCode(currentPractical.starterCodes[newLang] || '');
+    const template = currentPractical?.starterCodes?.[newLang] || currentPractical?.starterCodes?.cpp || '';
+    setCode(template);
     addToast(`Switched compiler to ${newLang.toUpperCase()}`, 'info');
   };
 
-  // Reset editor modal trigger (No browser confirm)
+  // Reset editor modal trigger
   const handleResetCode = () => {
     setIsResetConfirmModalOpen(true);
   };
 
   const handleConfirmReset = () => {
-    setCode(currentPractical.starterCodes[language] || '');
+    const template = currentPractical?.starterCodes?.[language] || currentPractical?.starterCodes?.cpp || '';
+    setCode(template);
     setIsResetConfirmModalOpen(false);
     addToast('Editor reset to default starter template', 'info');
   };
@@ -179,8 +247,13 @@ export default function App() {
     setTimeout(() => setIsAutoSaving(false), 800);
   };
 
-  // Execute Code via Judge0 / FastAPI with Multi-Stage Progression
+  // Execute Code via Judge0 / FastAPI
   const handleRunCode = async () => {
+    if (!currentPractical) {
+      addToast('No active practical selected.', 'warning');
+      return;
+    }
+
     setIsRunning(true);
     setEvaluationPhase('compiling');
     setEvaluationProgress(15);
@@ -202,7 +275,7 @@ export default function App() {
     };
 
     const payload = {
-      student_id: currentUser?.identifier || 'PRN2026CS014',
+      student_id: currentUser?.identifier || 'GHR2025AI001',
       practical_id: currentPractical.id,
       language_id: languageMap[language] || 54,
       source_code: code,
@@ -229,7 +302,6 @@ export default function App() {
         `[00:00.520] [HARNESS] Dispatching test suite to evaluator microservice...`,
       ]);
 
-      // Trigger actual evaluation from backend service (FastAPI / Judge0)
       const dataPromise = evaluateSubmission(payload);
 
       await new Promise((r) => setTimeout(r, 350));
@@ -300,7 +372,7 @@ export default function App() {
     }
   };
 
-  // Submit Practical (No browser alert)
+  // Submit Practical to Supabase
   const handleSubmitPractical = async () => {
     if (!evaluationResult) {
       addToast('Please run and test your code first before submitting the practical.', 'warning');
@@ -308,43 +380,63 @@ export default function App() {
     }
 
     const focusState = focusTracker.getState();
-    const newSub = await submitStudentPractical({
-      studentId: currentUser?.identifier || 'PRN2026CS014',
-      studentName: currentUser?.name || 'Aarav Sharma',
-      practicalId: currentPractical.id,
-      practicalTitle: currentPractical.title,
-      language,
-      codingMarks: evaluationResult.coding_marks_awarded ?? 3.0,
-      passRate: evaluationResult.pass_percentage || 0,
-      passedCount: evaluationResult.passed_test_cases || 0,
-      totalCount: evaluationResult.total_test_cases || 3,
-      adaptiveTier: evaluationResult.adaptive_tiering?.assigned_tier || 'Proficient',
-      timeSpentSeconds: 420,
-      focusBlurEvents: focusState.blurEventsCount || 0,
-      sourceCode: code,
-    });
 
-    setIsSubmitted(true);
-    setSubmissions((prev) => [newSub, ...prev]);
+    try {
+      const newSub = await submitStudentPractical({
+        studentId: currentUser.id,
+        prn: currentUser.identifier || 'GHR2025AI001',
+        studentName: currentUser.name || 'Student',
+        rollNumber: currentUser.identifier || 'GHR2025AI001',
+        practicalId: currentPractical.id,
+        practicalTitle: currentPractical.title,
+        language,
+        codingMarks: evaluationResult.coding_marks_awarded ?? 3.0,
+        passRate: evaluationResult.pass_percentage || 0,
+        passedCount: evaluationResult.passed_test_cases || 0,
+        totalCount: evaluationResult.total_test_cases || 3,
+        adaptiveTier: evaluationResult.adaptive_tiering?.assigned_tier || 'Proficient',
+        timeSpentSeconds: 420,
+        focusBlurEvents: focusState.blurEventsCount || 0,
+        sourceCode: code,
+      });
 
-    if (newSub.dbError) {
-      addToast(`Practical saved locally. Note: Supabase sync warning (${newSub.dbError})`, 'warning');
-    } else {
-      addToast(`Practical submitted successfully! ${newSub.codingMarks}/3.0 coding marks logged.`, 'success');
+      setIsSubmitted(true);
+      setSubmissions((prev) => [newSub, ...prev]);
+      addToast(`Practical submitted to Supabase! ${newSub.codingMarks}/3.0 coding marks logged.`, 'success');
+
+      // Refresh live submissions in background
+      getSubmissions(currentUser.id).then((fresh) => setSubmissions(fresh)).catch(() => {});
+    } catch (err) {
+      console.error('Submission failed:', err);
+      addToast(`Submission error: ${err.message}`, 'danger');
     }
   };
 
   // Faculty Grade Submission
   const handleSaveGrade = async (submissionId, gradeData) => {
-    const updated = await gradeSubmission(submissionId, gradeData);
-    setSubmissions([...updated]);
-    addToast('10-Mark Rubric Score recorded & audited successfully!', 'success');
+    try {
+      await gradeSubmission(submissionId, {
+        ...gradeData,
+        gradedBy: currentUser.id,
+      });
+
+      addToast('10-Mark Rubric Score recorded & audited successfully in Supabase!', 'success');
+
+      // Refresh submissions
+      const freshSubs = await getSubmissions();
+      setSubmissions(freshSubs);
+    } catch (err) {
+      console.error('Grading error:', err);
+      addToast(`Failed to record grade: ${err.message}`, 'danger');
+    }
   };
 
   // If not logged in, render the unified Authentication View
   if (!currentUser) {
     return <LoginView onLoginSuccess={handleLoginSuccess} />;
   }
+
+  const batchMetrics = computeBatchMetrics(submissions);
 
   return (
     <div className="app-root">
@@ -366,7 +458,7 @@ export default function App() {
         onOpenAuditDrawer={() => setIsAuditDrawerOpen(true)}
         onRunCode={handleRunCode}
         onSubmitPractical={handleSubmitPractical}
-        onExportGradebook={() => addToast('Exporting Batch A 10-Mark Gradebook (CSV/NEP 2020 format)...', 'info')}
+        onExportGradebook={() => addToast('Exporting 10-Mark Gradebook (CSV/NEP 2020 format)...', 'info')}
         isRunning={isRunning}
         isSubmitted={isSubmitted}
       />
@@ -375,8 +467,14 @@ export default function App() {
       {activeRole === 'student' ? (
         studentView === 'dashboard' ? (
           <StudentDashboard
+            currentUser={currentUser}
+            studentProfile={studentProfile}
+            submissions={submissions}
             currentPractical={currentPractical}
             practicals={practicals}
+            isLoading={isLoadingData}
+            error={dataError}
+            onRetry={loadData}
             onContinuePractical={(prac) => {
               if (prac) handleSelectPractical(prac);
               setStudentView('workspace');
@@ -407,8 +505,13 @@ export default function App() {
         )
       ) : (
         <FacultyDashboard
-          batchMetrics={batchMetrics}
+          currentUser={currentUser}
+          facultyAllocations={facultyAllocations}
           submissions={submissions}
+          batchMetrics={batchMetrics}
+          isLoading={isLoadingData}
+          error={dataError}
+          onRetry={loadData}
           onSaveGrade={handleSaveGrade}
         />
       )}
@@ -422,7 +525,7 @@ export default function App() {
         onSelectPractical={handleSelectPractical}
       />
 
-      {/* Reset Confirmation Modal (In-App Apple/Linear Style) */}
+      {/* Reset Confirmation Modal */}
       <Modal
         isOpen={isResetConfirmModalOpen}
         onClose={() => setIsResetConfirmModalOpen(false)}

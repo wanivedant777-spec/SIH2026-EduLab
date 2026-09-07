@@ -8,7 +8,9 @@ import {
   Download,
   Layers,
   Sparkles,
-  FileCheck2
+  FileCheck2,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import SubmissionsQueue from './SubmissionsQueue';
 import GradingModal from './GradingModal';
@@ -16,8 +18,13 @@ import AuditLogDrawer from './AuditLogDrawer';
 import Button from '../ui/Button';
 
 export default function FacultyDashboard({
-  batchMetrics,
+  currentUser: _currentUser,
+  facultyAllocations = [],
   submissions = [],
+  batchMetrics,
+  isLoading = false,
+  error = null,
+  onRetry,
   onSaveGrade,
 }) {
   const [selectedSubmission, setSelectedSubmission] = useState(null);
@@ -34,28 +41,58 @@ export default function FacultyDashboard({
     setIsAuditOpen(true);
   };
 
-  const tierBreakdown = batchMetrics?.tierBreakdown || {
-    advanced: 42,
-    proficient: 45,
-    beginner: 13,
-  };
+  // Derive allocated batches and subject info
+  const batchNames = facultyAllocations.map((a) => a.batches?.name).filter(Boolean);
+  const batchesText = batchNames.length ? batchNames.join(', ') : 'C1, C2, C3';
+  const subjectCode = facultyAllocations[0]?.subjects?.code || 'CS201P';
+  const subjectName = facultyAllocations[0]?.subjects?.name || 'Data Structures';
 
-  const rubricAverages = batchMetrics?.rubricAverages || {
-    coding: 2.7,
-    writing: 4.4,
-    viva: 1.5,
-  };
-
+  // Live calculated stats
+  const totalSubmissions = submissions.length;
+  const gradedSubmissions = submissions.filter((s) => s.status === 'Graded');
   const pendingCount = submissions.filter((s) => s.status !== 'Graded').length;
   const flaggedCount = submissions.filter((s) => (s.focusBlurEvents || 0) > 0).length;
+  const uniqueStudents = new Set(submissions.map((s) => s.studentId || s.prn)).size;
+
+  const codingSum = gradedSubmissions.reduce((acc, s) => acc + (s.codingMarks || 0), 0);
+  const writingSum = gradedSubmissions.reduce((acc, s) => acc + (s.writeupMarks || 0), 0);
+  const vivaSum = gradedSubmissions.reduce((acc, s) => acc + (s.vivaMarks || 0), 0);
+  const totalMarksSum = gradedSubmissions.reduce((acc, s) => acc + (s.totalMarks || 0), 0);
+
+  const rubricAverages = {
+    coding: gradedSubmissions.length ? (codingSum / gradedSubmissions.length).toFixed(1) : '3.0',
+    writing: gradedSubmissions.length ? (writingSum / gradedSubmissions.length).toFixed(1) : '0.0',
+    viva: gradedSubmissions.length ? (vivaSum / gradedSubmissions.length).toFixed(1) : '0.0',
+  };
+
+  const averagePerformance = gradedSubmissions.length
+    ? `${(totalMarksSum / gradedSubmissions.length).toFixed(1)} / 10`
+    : totalSubmissions
+    ? '3.0 / 10'
+    : '0.0 / 10';
+
+  const completionRate = totalSubmissions
+    ? Math.round((gradedSubmissions.length / totalSubmissions) * 100)
+    : 0;
+
+  // Live tier distribution
+  const advancedCount = submissions.filter((s) => s.adaptiveTier === 'Advanced').length;
+  const proficientCount = submissions.filter((s) => s.adaptiveTier === 'Proficient').length;
+  const beginnerCount = submissions.filter((s) => s.adaptiveTier === 'Beginner').length;
+
+  const tierBreakdown = {
+    advanced: totalSubmissions ? Math.round((advancedCount / totalSubmissions) * 100) : (batchMetrics?.tierBreakdown?.advanced || 50),
+    proficient: totalSubmissions ? Math.round((proficientCount / totalSubmissions) * 100) : (batchMetrics?.tierBreakdown?.proficient || 40),
+    beginner: totalSubmissions ? Math.round((beginnerCount / totalSubmissions) * 100) : (batchMetrics?.tierBreakdown?.beginner || 10),
+  };
 
   const handleExportCSV = () => {
-    // Generate simple NEP 2020 Gradebook CSV
-    const headers = ['PRN', 'Student Name', 'Roll Number', 'Practical', 'Coding (3M)', 'Writing (5M)', 'Viva (2M)', 'Total (10M)', 'Adaptive Tier', 'Integrity Status'];
+    const headers = ['PRN', 'Student Name', 'Roll Number', 'Batch', 'Practical', 'Coding (3M)', 'Writing (5M)', 'Viva (2M)', 'Total (10M)', 'Adaptive Tier', 'Integrity Status', 'Status'];
     const rows = submissions.map((s) => [
-      s.prn || 'PRN2026CS000',
+      s.prn || 'GHR2025AI001',
       s.studentName,
       s.rollNumber,
+      s.batchName || 'C1',
       s.practicalTitle,
       s.codingMarks || 0,
       s.writeupMarks || 0,
@@ -63,13 +100,14 @@ export default function FacultyDashboard({
       s.totalMarks || 0,
       s.adaptiveTier || 'Proficient',
       s.focusBlurEvents > 0 ? `${s.focusBlurEvents} Blurs (Flagged)` : 'Verified Clean',
+      s.status,
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `EduLab_BatchA_10Mark_Gradebook_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `EduLab_${subjectCode}_Batches_${batchesText.replace(/,\s*/g, '_')}_10Mark_Gradebook_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -78,6 +116,34 @@ export default function FacultyDashboard({
   return (
     <div className="faculty-portal-root">
       <div className="faculty-portal-container">
+        {/* Database error banner */}
+        {error && (
+          <div className="db-error-banner" style={{
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            marginBottom: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <AlertTriangle size={20} color="var(--danger-text, #ef4444)" />
+              <div>
+                <strong style={{ color: '#fff', fontSize: '14px', display: 'block' }}>Database Synchronization Notice</strong>
+                <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '13px' }}>{error}</span>
+              </div>
+            </div>
+            {onRetry && (
+              <Button variant="secondary" size="sm" icon={RefreshCw} onClick={onRetry}>
+                Retry Sync
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* =========================================================
             FACULTY COMMAND HEADER
             ========================================================= */}
@@ -85,13 +151,13 @@ export default function FacultyDashboard({
           <div className="command-header-left">
             <div className="faculty-context-tag">
               <span className="context-dot" />
-              <span>FACULTY ACADEMIC CONSOLE · BATCH A</span>
+              <span>FACULTY ACADEMIC CONSOLE · BATCHES {batchesText}</span>
             </div>
             <h1 className="faculty-command-title">
               Lab Evaluation &amp; Analytics Command Center
             </h1>
             <p className="faculty-command-subtitle">
-              CS204P Data Structures Lab · Academic Year 2026-27 (Sem III) · AICTE &amp; NEP 2020 10-Mark Rubric Assessment
+              {subjectCode}: {subjectName} Lab · Academic Year 2025-26 (Sem IV) · AICTE &amp; NEP 2020 10-Mark Rubric Assessment
             </p>
           </div>
 
@@ -125,40 +191,40 @@ export default function FacultyDashboard({
           {/* 1. Total Students */}
           <div className="faculty-metric-card">
             <div className="metric-card-top">
-              <span className="metric-card-label">Total Students</span>
+              <span className="metric-card-label">Allocated Students</span>
               <div className="metric-icon-wrap icon-primary">
                 <Users size={15} />
               </div>
             </div>
             <div className="metric-card-number-row">
-              <span className="metric-card-val">{batchMetrics?.totalStudents || 64}</span>
+              <span className="metric-card-val">{uniqueStudents || 1}</span>
               <span className="metric-card-unit">Enrolled</span>
             </div>
             <div className="metric-card-subtext">
-              <span>Batch A · 100% Active Cohort</span>
+              <span>Batches {batchesText} · Active Cohort</span>
             </div>
           </div>
 
           {/* 2. Completion Rate */}
           <div className="faculty-metric-card">
             <div className="metric-card-top">
-              <span className="metric-card-label">Completion Rate</span>
+              <span className="metric-card-label">Evaluation Rate</span>
               <div className="metric-icon-wrap icon-success">
                 <CheckCircle2 size={15} />
               </div>
             </div>
             <div className="metric-card-number-row">
-              <span className="metric-card-val">{batchMetrics?.completionRate || 90.6}%</span>
-              <span className="metric-card-unit">({batchMetrics?.submissionsCount || 58}/64)</span>
+              <span className="metric-card-val">{completionRate}%</span>
+              <span className="metric-card-unit">({gradedSubmissions.length}/{totalSubmissions || 1})</span>
             </div>
             <div className="progress-track" style={{ height: '4px', marginTop: '6px' }}>
               <div
                 className="progress-fill fill-success"
-                style={{ width: `${batchMetrics?.completionRate || 90.6}%` }}
+                style={{ width: `${completionRate}%` }}
               />
             </div>
             <div className="metric-card-subtext" style={{ marginTop: '6px' }}>
-              <span className="text-success">+8 Submissions today</span>
+              <span className="text-success">{pendingCount} pending grading</span>
             </div>
           </div>
 
@@ -171,7 +237,7 @@ export default function FacultyDashboard({
               </div>
             </div>
             <div className="metric-card-number-row">
-              <span className="metric-card-val">{batchMetrics?.averagePerformance || '8.6 / 10'}</span>
+              <span className="metric-card-val">{averagePerformance}</span>
               <span className="metric-card-unit">GPA</span>
             </div>
             <div className="metric-card-subtext">
@@ -188,20 +254,18 @@ export default function FacultyDashboard({
               </div>
             </div>
             <div className="metric-card-number-row">
-              <span className="metric-card-val">{pendingCount || batchMetrics?.pendingEvaluations || 14}</span>
+              <span className="metric-card-val">{pendingCount}</span>
               <span className="metric-card-unit">Submissions</span>
             </div>
             <div className="metric-card-subtext">
-              <span className="text-warning">Awaiting 3M Write-up / 2M Viva verification</span>
+              <span className="text-warning">Awaiting 5M Write-up / 2M Viva input</span>
             </div>
           </div>
 
           {/* 5. Flagged Submissions */}
           <div
             className="faculty-metric-card metric-card-interactive"
-            onClick={() => {
-              setActiveQueueFilter('flagged');
-            }}
+            onClick={() => setActiveQueueFilter('flagged')}
             title="Click to filter flagged submissions in the queue"
           >
             <div className="metric-card-top">
@@ -211,11 +275,11 @@ export default function FacultyDashboard({
               </div>
             </div>
             <div className="metric-card-number-row">
-              <span className="metric-card-val text-danger">{flaggedCount || batchMetrics?.flaggedSubmissions || 3}</span>
+              <span className="metric-card-val text-danger">{flaggedCount}</span>
               <span className="metric-card-unit">Integrity Alerts</span>
             </div>
             <div className="metric-card-subtext">
-              <span className="text-danger">&gt; 2 Tab Blurs · Requires faculty oral review</span>
+              <span className="text-danger">&gt; 2 Tab Blurs · Review required</span>
             </div>
           </div>
         </section>
@@ -231,7 +295,7 @@ export default function FacultyDashboard({
                 <Layers size={14} color="var(--accent-text)" />
                 <span>AICTE Adaptive Difficulty Distribution</span>
               </div>
-              <span className="panel-head-tag">Rule-Based Machine Classifier</span>
+              <span className="panel-head-tag">Live Submission Data</span>
             </div>
 
             <div className="tier-dist-bars">
@@ -239,7 +303,7 @@ export default function FacultyDashboard({
               <div className="tier-dist-item">
                 <div className="tier-dist-label-row">
                   <span className="tier-name">Advanced Tier (Hard / Optimal Height Invariants)</span>
-                  <span className="tier-pct">{tierBreakdown.advanced}% (27 Students)</span>
+                  <span className="tier-pct">{tierBreakdown.advanced}% ({advancedCount || (totalSubmissions ? 0 : 1)} Student)</span>
                 </div>
                 <div className="progress-track" style={{ height: '5px' }}>
                   <div className="progress-fill fill-accent" style={{ width: `${tierBreakdown.advanced}%` }} />
@@ -250,7 +314,7 @@ export default function FacultyDashboard({
               <div className="tier-dist-item">
                 <div className="tier-dist-label-row">
                   <span className="tier-name">Proficient Tier (Standard Curricular Pace)</span>
-                  <span className="tier-pct">{tierBreakdown.proficient}% (29 Students)</span>
+                  <span className="tier-pct">{tierBreakdown.proficient}% ({proficientCount} Students)</span>
                 </div>
                 <div className="progress-track" style={{ height: '5px' }}>
                   <div className="progress-fill fill-success" style={{ width: `${tierBreakdown.proficient}%` }} />
@@ -261,7 +325,7 @@ export default function FacultyDashboard({
               <div className="tier-dist-item">
                 <div className="tier-dist-label-row">
                   <span className="tier-name">Beginner Tier (Needs Theory Scaffolding)</span>
-                  <span className="tier-pct">{tierBreakdown.beginner}% (8 Students)</span>
+                  <span className="tier-pct">{tierBreakdown.beginner}% ({beginnerCount} Students)</span>
                 </div>
                 <div className="progress-track" style={{ height: '5px' }}>
                   <div className="progress-fill fill-warning" style={{ width: `${tierBreakdown.beginner}%` }} />
@@ -272,7 +336,7 @@ export default function FacultyDashboard({
             <div className="tier-remediation-callout">
               <Sparkles size={13} color="var(--warning-text)" />
               <span>
-                <strong>Remediation Recommendation:</strong> 8 students flagged in Beginner tier require assisted pseudocode walkthrough before next AVL balancing rotation practical.
+                <strong>Remediation Recommendation:</strong> Batch {batchesText} students in Beginner tier recommended for assisted pseudocode walkthrough.
               </span>
             </div>
           </div>
@@ -284,7 +348,7 @@ export default function FacultyDashboard({
                 <FileCheck2 size={14} color="var(--cyan-light)" />
                 <span>NEP 2020 Institutional Credit Mapping</span>
               </div>
-              <span className="panel-head-tag">Credit Deposited</span>
+              <span className="panel-head-tag">Canonical Syllabus</span>
             </div>
 
             <p className="panel-card-desc">
@@ -293,19 +357,19 @@ export default function FacultyDashboard({
 
             <div className="nep-credits-list">
               <div className="nep-credit-item">
-                <span className="credit-code">CS204P.1</span>
-                <span className="credit-title">Non-Linear Trees &amp; BST Invariants (Level 5)</span>
+                <span className="credit-code">CS201P.1</span>
+                <span className="credit-title">Dynamic Memory Allocation &amp; Linked Lists (Level 4)</span>
                 <span className="credit-status">2 Credits</span>
               </div>
               <div className="nep-credit-item">
-                <span className="credit-code">CS204P.2</span>
-                <span className="credit-title">Dynamic Memory Allocation &amp; Pointer Operations</span>
-                <span className="credit-status">1 Credit</span>
+                <span className="credit-code">CS201P.4</span>
+                <span className="credit-title">Binary Search Tree Invariants &amp; Traversals (Level 5)</span>
+                <span className="credit-status">2 Credits</span>
               </div>
               <div className="nep-credit-item">
-                <span className="credit-code">CS204P.3</span>
-                <span className="credit-title">Judge0 Sandboxed Linux Compilation Integrity</span>
-                <span className="credit-status">1 Credit</span>
+                <span className="credit-code">CS201P.7</span>
+                <span className="credit-title">Dijkstra Shortest Path &amp; Greedy Optimization (Level 6)</span>
+                <span className="credit-status">2 Credits</span>
               </div>
             </div>
           </div>
@@ -315,12 +379,19 @@ export default function FacultyDashboard({
             SEARCHABLE & FILTERABLE EVALUATION QUEUE
             ========================================================= */}
         <section className="faculty-queue-section">
-          <SubmissionsQueue
-            submissions={submissions}
-            onOpenGrading={handleOpenGrading}
-            onOpenAuditLogs={handleOpenAuditLogs}
-            initialFilter={activeQueueFilter}
-          />
+          {isLoading && submissions.length === 0 ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div className="skeleton-pulse" style={{ width: '40px', height: '40px', borderRadius: '50%', margin: '0 auto 16px', background: 'rgba(99, 102, 241, 0.2)' }} />
+              <p>Loading authorized submissions for Batches {batchesText}...</p>
+            </div>
+          ) : (
+            <SubmissionsQueue
+              submissions={submissions}
+              onOpenGrading={handleOpenGrading}
+              onOpenAuditLogs={handleOpenAuditLogs}
+              initialFilter={activeQueueFilter}
+            />
+          )}
         </section>
 
         {/* Modals & Drawers */}
