@@ -28,8 +28,6 @@ REVOKE EXECUTE ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC, anon, authe
 REVOKE ALL ON FUNCTION public.get_user_role() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.get_user_role() FROM PUBLIC, anon;
 
--- Explicitly allow whitelist lookup during login
-GRANT EXECUTE ON FUNCTION public.lookup_user_by_identifier(text) TO anon, authenticated;
 
 
 -- ------------------------------------------------------------------------------
