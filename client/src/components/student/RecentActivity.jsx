@@ -40,9 +40,9 @@ export default function RecentActivity({ activities = [] }) {
           style={{
             padding: '40px 20px',
             textAlign: 'center',
-            background: 'rgba(255, 255, 255, 0.02)',
+            background: 'var(--bg-surface-subtle)',
             borderRadius: '16px',
-            border: '1px dashed rgba(255, 255, 255, 0.1)',
+            border: '1px dashed var(--border-medium)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -54,7 +54,7 @@ export default function RecentActivity({ activities = [] }) {
               width: '44px',
               height: '44px',
               borderRadius: '50%',
-              background: 'rgba(99, 102, 241, 0.1)',
+              background: 'var(--accent-subtle)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -63,7 +63,7 @@ export default function RecentActivity({ activities = [] }) {
           >
             <Inbox size={22} color="var(--accent-text)" />
           </div>
-          <h4 style={{ color: '#fff', fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>
+          <h4 style={{ color: 'var(--text-primary)', fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>
             No Activity Recorded Yet
           </h4>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px', maxWidth: '380px', margin: 0, lineHeight: 1.5 }}>

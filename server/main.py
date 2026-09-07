@@ -14,7 +14,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import requests
@@ -394,8 +394,67 @@ def health_check():
     }
 
 
+def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    """
+    Requires and verifies a Supabase JWT from the Authorization header.
+    Rejects requests without a valid Bearer token.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid Authorization header. A valid Bearer token is required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bearer token missing.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+    if not supabase_url:
+        logger.error("SUPABASE_URL is not configured for JWT verification")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service misconfigured.",
+        )
+
+    # Verify token by fetching user from Supabase Auth
+    verify_url = f"{supabase_url}/auth/v1/user"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "apikey": service_key or token,
+    }
+    try:
+        resp = requests.get(verify_url, headers=headers, timeout=5)
+        if resp.status_code != 200:
+            logger.warning("Supabase JWT verification failed: HTTP %d", resp.status_code)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired Supabase authentication token.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error communicating with Supabase Auth for token verification: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication provider unreachable.",
+        )
+
+
 @app.post("/api/evaluate", response_model=EvaluationResponse, tags=["Evaluation"])
-def evaluate_submission(payload: EvaluationRequest):
+def evaluate_submission(
+    payload: EvaluationRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
     """
     Main evaluation pipeline:
     1. Validates student code submission
@@ -508,7 +567,10 @@ def evaluate_submission(payload: EvaluationRequest):
 
 
 @app.post("/api/tiering", response_model=AdaptiveTierResult, tags=["Adaptive Learning"])
-def evaluate_adaptive_tier(req: TieringRequest):
+def evaluate_adaptive_tier(
+    req: TieringRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
     """
     Dedicated endpoint for the rule-based difficulty tiering engine.
     Can be queried independently by Supabase Edge Functions or n8n workflow triggers.
@@ -601,8 +663,10 @@ def institutional_login(req: AuthLoginRequest):
                     "email_confirm": True,
                     "user_metadata": {
                         "full_name": full_name,
-                        "role": role,
                         "identifier": clean_id
+                    },
+                    "app_metadata": {
+                        "role": role
                     }
                 },
                 timeout=10
@@ -657,6 +721,115 @@ def institutional_login(req: AuthLoginRequest):
             "batchName": batch_name,
             "status": "active"
         }
+    }
+
+
+class DemoLoginRequest(BaseModel):
+    role: str = Field(..., description="Target demo persona: 'student' or 'faculty'")
+
+
+@app.post("/api/auth/demo-login", tags=["Authentication"])
+def demo_login(req: DemoLoginRequest):
+    """
+    Dedicated demo login endpoint for hackathon evaluators.
+    Only enabled when ENABLE_DEMO_LOGIN=true is configured server-side.
+    Returns a real Supabase session and verified profile for seeded demo accounts
+    without exposing credentials to the client bundle.
+    """
+    enable_demo = os.getenv("ENABLE_DEMO_LOGIN", "false").strip().lower() in ("true", "1", "yes")
+    if not enable_demo:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo login is disabled in this environment."
+        )
+
+    target_role = req.role.strip().lower()
+    if target_role not in ("student", "faculty"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be either 'student' or 'faculty'."
+        )
+
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if not supabase_url or not service_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Supabase credentials not configured on backend."
+        )
+
+    # Server-stored credentials - NEVER exposed to the client bundle
+    demo_credentials = {
+        "student": {
+            "email": os.getenv("DEMO_STUDENT_EMAIL", "student001@college.edu"),
+            "password": os.getenv("DEMO_STUDENT_PASSWORD", "StudentPassword@2026"),
+            "identifier": "GHR2025AI001",
+        },
+        "faculty": {
+            "email": os.getenv("DEMO_FACULTY_EMAIL", "faculty001@college.edu"),
+            "password": os.getenv("DEMO_FACULTY_PASSWORD", "FacultyPassword@2026"),
+            "identifier": "FAC001",
+        }
+    }
+
+    creds = demo_credentials[target_role]
+    token_url = f"{supabase_url}/auth/v1/token?grant_type=password"
+
+    try:
+        login_res = requests.post(
+            token_url,
+            headers={"apikey": service_key, "Content-Type": "application/json"},
+            json={"email": creds["email"], "password": creds["password"]},
+            timeout=10
+        )
+        if login_res.status_code != 200:
+            logger.error("Demo login failed for %s: %s", target_role, login_res.text)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Unable to authenticate demo {target_role} account."
+            )
+        session_data = login_res.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Demo login request failed: %s", e)
+        raise HTTPException(status_code=500, detail="Demo authentication service error.")
+
+    user_id = session_data.get("user", {}).get("id")
+    admin_headers = {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+        "Content-Type": "application/json"
+    }
+
+    # Retrieve verified profile
+    prof_url = f"{supabase_url}/rest/v1/profiles?email=eq.{creds['email']}&select=*,batches(name)"
+    profile_data = {
+        "id": user_id,
+        "email": creds["email"],
+        "identifier": creds["identifier"],
+        "name": "Student 001" if target_role == "student" else "Faculty One",
+        "role": target_role,
+        "batchName": "C1" if target_role == "student" else "All Allocated Batches",
+        "status": "active"
+    }
+    try:
+        prof_res = requests.get(prof_url, headers=admin_headers, timeout=5)
+        if prof_res.status_code == 200 and prof_res.json():
+            p = prof_res.json()[0]
+            profile_data["id"] = p.get("id") or user_id
+            profile_data["name"] = p.get("full_name") or profile_data["name"]
+            profile_data["identifier"] = p.get("identifier") or creds["identifier"]
+            profile_data["role"] = p.get("role") or target_role
+            if isinstance(p.get("batches"), dict):
+                profile_data["batchName"] = p["batches"].get("name", profile_data["batchName"])
+    except Exception as e:
+        logger.warning("Could not fetch extended profile for demo account: %s", e)
+
+    return {
+        "status": "success",
+        "session": session_data,
+        "profile": profile_data
     }
 
 

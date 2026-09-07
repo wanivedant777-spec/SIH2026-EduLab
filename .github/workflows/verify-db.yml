@@ -1,0 +1,48 @@
+name: Verify Database Migrations & RLS Policies
+
+on:
+  pull_request:
+    paths:
+      - 'database/schemas/**'
+      - 'database/*.py'
+  workflow_dispatch:
+
+jobs:
+  verify-database:
+    name: Verify RLS, Acyclic DAG & Auth Whitelisting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Configure Branch Database Environment
+        run: |
+          mkdir -p client server
+          cat << 'EOF' > client/.env
+          VITE_SUPABASE_URL=${{ secrets.SUPABASE_BRANCH_URL || secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_BRANCH_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
+          EOF
+
+          cat << 'EOF' > server/.env
+          SUPABASE_URL=${{ secrets.SUPABASE_BRANCH_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_BRANCH_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EOF
+
+      - name: 1. Verify RLS Function Permissions (06_rls_function_permission_fix.sql)
+        run: python database/verify_rls_fix.py
+
+      - name: 2. Verify Acyclic Dependency Graph (07_fix_profiles_rls_recursion.sql)
+        run: python database/verify_no_recursion.py
+
+      - name: 3. Test Auth Whitelisting & Auto-Profile Linking
+        run: python database/test_auth_whitelisting.py

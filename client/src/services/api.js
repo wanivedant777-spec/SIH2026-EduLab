@@ -1,12 +1,27 @@
 /* EduLab Nova - FastAPI Evaluation Microservice Client */
+import { supabase } from '../supabaseClient';
 
 const API_BASE_URL = import.meta.env.VITE_EVALUATION_API_URL || 'http://localhost:8000';
 
+async function getAuthHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+  } catch (err) {
+    console.warn('Could not extract session token for evaluator API:', err);
+  }
+  return headers;
+}
+
 export async function evaluateSubmission(payload) {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(`${API_BASE_URL}/api/evaluate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload),
     });
 
@@ -64,9 +79,10 @@ export async function evaluateSubmission(payload) {
 
 export async function calculateTier(metrics) {
   try {
+    const headers = await getAuthHeaders();
     const res = await fetch(`${API_BASE_URL}/api/tiering`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(metrics),
     });
 
@@ -83,4 +99,19 @@ export async function calculateTier(metrics) {
       metrics,
     };
   }
+}
+
+export async function loginDemoAccount(role) {
+  const res = await fetch(`${API_BASE_URL}/api/auth/demo-login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Demo login failed with status ${res.status}`);
+  }
+
+  return await res.json();
 }

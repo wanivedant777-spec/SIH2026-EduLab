@@ -79,13 +79,13 @@ export default function PracticalModal({
                     <Check size={14} /> Active In Editor
                   </span>
                 ) : (
-                  <span style={{ fontSize: '12px', color: 'var(--primary-light)', fontWeight: 600 }}>
+                  <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}>
                     Load Practical →
                   </span>
                 )}
               </div>
 
-              <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
                 {prac.title}
               </h3>
 

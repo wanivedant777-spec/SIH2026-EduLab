@@ -100,7 +100,7 @@ export default function GradingModal({
               <User size={18} />
             </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: '14px', color: '#ffffff' }}>
+              <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>
                 {submission.studentName}
               </div>
               <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
@@ -128,8 +128,8 @@ export default function GradingModal({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '13px', color: '#ffffff' }}>
-              <Code2 size={16} color="var(--primary-light)" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+              <Code2 size={16} color="var(--accent)" />
               1. Performing / Coding (Auto-Graded)
             </div>
             <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--success-light)', fontFamily: 'var(--font-mono)' }}>
@@ -144,7 +144,7 @@ export default function GradingModal({
 
           <div
             style={{
-              background: '#070a12',
+              background: 'var(--bg-code)',
               borderRadius: 'var(--radius-xs)',
               padding: '10px 12px',
               border: '1px solid var(--border-subtle)',
@@ -170,11 +170,11 @@ export default function GradingModal({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '13px', color: '#ffffff' }}>
-              <BookOpen size={16} color="var(--purple-light)" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+              <BookOpen size={16} color="var(--accent)" />
               2. Lab Write-Up / Journal Completeness (Faculty Graded)
             </div>
-            <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--purple-light)', fontFamily: 'var(--font-mono)' }}>
+            <div style={{ fontWeight: 800, fontSize: '14px', color: 'var(--accent-text)', fontFamily: 'var(--font-mono)' }}>
               {writeupMarks} / 5.0 Marks
             </div>
           </div>
@@ -235,7 +235,7 @@ export default function GradingModal({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, fontSize: '13px', color: '#ffffff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
               <MessageSquare size={15} color="var(--accent-text)" />
               3. Viva Voce Examination (Faculty Graded)
             </div>
@@ -279,7 +279,7 @@ export default function GradingModal({
               background: 'var(--bg-surface)',
               border: '1px solid var(--border-medium)',
               borderRadius: 'var(--radius-sm)',
-              color: '#ffffff',
+              color: 'var(--text-primary)',
               padding: '10px',
               fontFamily: 'var(--font-sans)',
               fontSize: '12px',

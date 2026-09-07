@@ -10,7 +10,7 @@ import Modal from './components/ui/Modal';
 import Button from './components/ui/Button';
 import LoginView from './components/LoginView';
 import { supabase } from './supabaseClient';
-import { evaluateSubmission } from './services/api';
+import { evaluateSubmission, loginDemoAccount } from './services/api';
 import {
   getPracticals,
   getSubmissions,
@@ -83,11 +83,11 @@ export default function App() {
             .eq('id', session.user.id)
             .single();
 
-          const role = profile?.role || session.user.user_metadata?.role || 'student';
+          const role = profile?.role || session.user.app_metadata?.role || 'student';
           const userObj = {
             id: session.user.id,
             email: session.user.email,
-            identifier: profile?.identifier || session.user.user_metadata?.identifier || session.user.email?.split('@')[0] || 'User',
+            identifier: profile?.identifier || session.user.app_metadata?.identifier || session.user.email?.split('@')[0] || 'User',
             name: profile?.full_name || session.user.user_metadata?.full_name || 'User',
             role,
             batchName: profile?.batches?.name || 'Unassigned',
@@ -448,55 +448,29 @@ export default function App() {
       return;
     }
 
-    const DEMO_PERSONAS = {
-      student: {
-        email: 'student001@college.edu',
-        password: 'StudentPassword@2026',
-        identifier: 'GHR2025AI001',
-        name: 'Student 001',
-        role: 'student',
-        batchName: 'C1',
-      },
-      faculty: {
-        email: 'faculty001@college.edu',
-        password: 'FacultyPassword@2026',
-        identifier: 'FAC001',
-        name: 'Faculty One',
-        role: 'faculty',
-        batchName: 'All Allocated Batches',
-      },
-    };
-
-    const targetCreds = DEMO_PERSONAS[targetRole];
-    if (!targetCreds) {
-      setActiveRole(targetRole);
-      return;
-    }
-
-    addToast(`Authenticating demo session as ${targetCreds.name} (${targetCreds.identifier})...`, 'info');
+    addToast(`Authenticating demo session for ${targetRole}...`, 'info');
     setIsLoadingData(true);
 
     try {
-      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
-        email: targetCreds.email,
-        password: targetCreds.password,
-      });
+      // Authenticate via server-side demo-login endpoint (no credentials in client bundle)
+      const resData = await loginDemoAccount(targetRole);
 
-      if (authErr) {
-        console.warn('Persona switch notice:', authErr.message);
-        setActiveRole(targetRole);
-        return;
+      if (resData.session?.access_token) {
+        await supabase.auth.setSession({
+          access_token: resData.session.access_token,
+          refresh_token: resData.session.refresh_token,
+        });
       }
 
-      const authUser = authData.user;
+      const activeProfile = resData.profile;
       const newUser = {
-        id: authUser.id,
-        email: authUser.email,
-        identifier: targetCreds.identifier,
-        name: targetCreds.name,
-        role: targetCreds.role,
-        batchName: targetCreds.batchName,
-        status: 'active',
+        id: activeProfile.id,
+        email: activeProfile.email,
+        identifier: activeProfile.identifier,
+        name: activeProfile.name,
+        role: activeProfile.role,
+        batchName: activeProfile.batchName,
+        status: activeProfile.status || 'active',
       };
 
       setCurrentUser(newUser);
@@ -504,9 +478,10 @@ export default function App() {
       if (targetRole === 'student') {
         setStudentView('dashboard');
       }
-      addToast(`Active Persona: ${targetCreds.name} · Loaded real Supabase data`, 'success');
+      addToast(`Active Persona: ${newUser.name} · Loaded real Supabase data`, 'success');
     } catch (err) {
-      console.error('Failed to switch persona:', err);
+      console.warn('Persona switch notice:', err.message);
+      // If server demo-login is not configured, update local state
       setActiveRole(targetRole);
     } finally {
       setIsLoadingData(false);

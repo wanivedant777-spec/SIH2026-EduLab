@@ -259,7 +259,7 @@ export default function Terminal({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '8px 12px',
-                background: 'rgba(255, 255, 255, 0.02)',
+                background: 'var(--bg-surface-subtle)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-sm)',
                 marginBottom: '10px',
@@ -274,7 +274,7 @@ export default function Terminal({
                 <span><strong>3.0M Coding</strong> (Automated via Test Suite)</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--purple-light)' }} />
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--info)' }} />
                 <span><strong>5.0M Writing</strong> (Faculty Evaluated Journal)</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

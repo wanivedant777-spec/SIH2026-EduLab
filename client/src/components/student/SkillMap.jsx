@@ -26,9 +26,9 @@ export default function SkillMap({ skills = [] }) {
           style={{
             padding: '50px 24px',
             textAlign: 'center',
-            background: 'rgba(255, 255, 255, 0.02)',
+            background: 'var(--bg-surface-subtle)',
             borderRadius: '16px',
-            border: '1px dashed rgba(255, 255, 255, 0.1)',
+            border: '1px dashed var(--border-medium)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -41,7 +41,7 @@ export default function SkillMap({ skills = [] }) {
               width: '52px',
               height: '52px',
               borderRadius: '50%',
-              background: 'rgba(99, 102, 241, 0.1)',
+              background: 'var(--accent-subtle)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -50,7 +50,7 @@ export default function SkillMap({ skills = [] }) {
           >
             <AlertCircle size={26} color="var(--accent-text)" />
           </div>
-          <h3 style={{ color: '#fff', fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>
+          <h3 style={{ color: 'var(--text-primary)', fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>
             No Evaluation Data Yet
           </h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px', maxWidth: '420px', lineHeight: 1.6, margin: 0 }}>
@@ -116,7 +116,7 @@ export default function SkillMap({ skills = [] }) {
                           key={i}
                           points={ringPoints}
                           fill="none"
-                          stroke="rgba(255, 255, 255, 0.07)"
+                          stroke="rgba(46, 46, 40, 0.12)"
                           strokeWidth="1"
                         />
                       );
@@ -134,7 +134,7 @@ export default function SkillMap({ skills = [] }) {
                           y1={center}
                           x2={x2}
                           y2={y2}
-                          stroke="rgba(255, 255, 255, 0.08)"
+                          stroke="rgba(46, 46, 40, 0.12)"
                           strokeWidth="1"
                         />
                       );
@@ -143,7 +143,7 @@ export default function SkillMap({ skills = [] }) {
                     {/* Shaded Area Polygon */}
                     <polygon
                       points={radarPoints}
-                      fill="rgba(94, 106, 210, 0.22)"
+                      fill="var(--accent-subtle)"
                       stroke="var(--accent)"
                       strokeWidth="2"
                     />
@@ -161,7 +161,7 @@ export default function SkillMap({ skills = [] }) {
                           cy={y}
                           r={s.level > 0 ? '4' : '2.5'}
                           fill={s.level > 0 ? 'var(--accent-text)' : 'var(--text-muted)'}
-                          stroke="#101216"
+                          stroke="#FFFFFF"
                           strokeWidth="1.5"
                         />
                       );

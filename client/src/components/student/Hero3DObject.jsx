@@ -188,7 +188,7 @@ export default function Hero3DObject({ practical, onInteract }) {
       });
 
       // Render subtle background grid plane
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+      ctx.strokeStyle = 'rgba(46, 46, 40, 0.06)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       const gridSize = 160;
@@ -218,9 +218,9 @@ export default function Hero3DObject({ practical, onInteract }) {
 
         // Subtle gradient line
         const avgZ = (fromNode.rz + toNode.rz) / 2;
-        const alpha = Math.max(0.15, Math.min(0.7, 0.45 - avgZ / 350));
+        const alpha = Math.max(0.2, Math.min(0.7, 0.45 - avgZ / 350));
 
-        ctx.strokeStyle = `rgba(94, 106, 210, ${alpha})`;
+        ctx.strokeStyle = `rgba(116, 128, 90, ${alpha})`;
         ctx.lineWidth = 1.6;
         ctx.beginPath();
         ctx.moveTo(fromNode.screenX, fromNode.screenY);
@@ -232,13 +232,13 @@ export default function Hero3DObject({ practical, onInteract }) {
         const pulseX = fromNode.screenX + (toNode.screenX - fromNode.screenX) * t;
         const pulseY = fromNode.screenY + (toNode.screenY - fromNode.screenY) * t;
 
-        // Glow particle
-        const pulseGrad = ctx.createRadialGradient(pulseX, pulseY, 0, pulseX, pulseY, 7);
-        pulseGrad.addColorStop(0, 'rgba(165, 176, 255, 0.9)');
-        pulseGrad.addColorStop(1, 'rgba(94, 106, 210, 0)');
+        // Olive particle
+        const pulseGrad = ctx.createRadialGradient(pulseX, pulseY, 0, pulseX, pulseY, 6);
+        pulseGrad.addColorStop(0, 'rgba(116, 128, 90, 0.9)');
+        pulseGrad.addColorStop(1, 'rgba(116, 128, 90, 0)');
         ctx.fillStyle = pulseGrad;
         ctx.beginPath();
-        ctx.arc(pulseX, pulseY, 7, 0, Math.PI * 2);
+        ctx.arc(pulseX, pulseY, 6, 0, Math.PI * 2);
         ctx.fill();
       });
 
@@ -258,34 +258,34 @@ export default function Hero3DObject({ practical, onInteract }) {
           node.screenY,
           radius * 2.2
         );
-        glowGrad.addColorStop(0, 'rgba(94, 106, 210, 0.35)');
-        glowGrad.addColorStop(1, 'rgba(12, 13, 16, 0)');
+        glowGrad.addColorStop(0, 'rgba(116, 128, 90, 0.12)');
+        glowGrad.addColorStop(1, 'rgba(250, 250, 247, 0)');
         ctx.fillStyle = glowGrad;
         ctx.beginPath();
         ctx.arc(node.screenX, node.screenY, radius * 2.2, 0, Math.PI * 2);
         ctx.fill();
 
-        // Node Core Body (Obsidian / Graphite with Electric Violet Border)
-        ctx.fillStyle = '#141721';
+        // Node Core Body (Paper white surface)
+        ctx.fillStyle = '#FFFFFF';
         ctx.beginPath();
         ctx.arc(node.screenX, node.screenY, radius, 0, Math.PI * 2);
         ctx.fill();
 
         // Border
         const isRoot = node.id === 0;
-        ctx.strokeStyle = isRoot ? '#a5b0ff' : 'rgba(94, 106, 210, 0.65)';
-        ctx.lineWidth = isRoot ? 2 : 1.2;
+        ctx.strokeStyle = isRoot ? '#74805A' : 'rgba(116, 128, 90, 0.45)';
+        ctx.lineWidth = isRoot ? 2.2 : 1.2;
         ctx.stroke();
 
-        // Top specular highlight inside the node (Apple aesthetic)
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        // Top subtle highlight inside node
+        ctx.strokeStyle = 'rgba(46, 46, 40, 0.08)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(node.screenX, node.screenY - radius * 0.2, radius * 0.7, Math.PI * 1.1, Math.PI * 1.9);
         ctx.stroke();
 
-        // Text label
-        ctx.fillStyle = isRoot ? '#ffffff' : '#e6edf3';
+        // Text label (warm charcoal)
+        ctx.fillStyle = '#2E2E28';
         ctx.font = `600 ${Math.max(9, Math.round(11 * node.scale))}px "JetBrains Mono", monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';

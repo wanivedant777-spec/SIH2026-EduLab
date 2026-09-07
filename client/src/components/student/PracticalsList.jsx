@@ -57,12 +57,12 @@ export default function PracticalsList({ practicals = [], submissions = [], curr
         <div style={{
           padding: '40px 20px',
           textAlign: 'center',
-          background: 'rgba(255, 255, 255, 0.02)',
+          background: 'var(--bg-surface-subtle)',
           borderRadius: '16px',
-          border: '1px dashed rgba(255, 255, 255, 0.1)',
+          border: '1px dashed var(--border-medium)',
         }}>
           <AlertCircle size={32} color="var(--accent-text)" style={{ margin: '0 auto 12px' }} />
-          <h3 style={{ color: '#fff', marginBottom: '6px' }}>No Practicals Found</h3>
+          <h3 style={{ color: 'var(--text-primary)', marginBottom: '6px' }}>No Practicals Found</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
             No curricular practicals are linked for this subject in the live database.
           </p>

@@ -26,7 +26,7 @@ export default function CodeEditor({
       {/* Editor Toolbar */}
       <div className="editor-toolbar">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary-light)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
             <Code2 size={16} />
           </div>
 
@@ -71,7 +71,7 @@ export default function CodeEditor({
           height="100%"
           language={getMonacoLanguage(language)}
           value={code}
-          theme="vs-dark"
+          theme="vs"
           onChange={handleEditorChange}
           options={{
             minimap: { enabled: false },

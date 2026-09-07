@@ -118,8 +118,8 @@ export default function FacultyDashboard({
         {/* Database error banner */}
         {error && (
           <div className="db-error-banner" style={{
-            background: 'rgba(239, 68, 68, 0.12)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
+            background: 'var(--danger-subtle)',
+            border: '1px solid var(--danger-border)',
             borderRadius: '12px',
             padding: '16px 20px',
             marginBottom: '24px',
@@ -129,10 +129,10 @@ export default function FacultyDashboard({
             gap: '16px',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <AlertTriangle size={20} color="var(--danger-text, #ef4444)" />
+              <AlertTriangle size={20} color="var(--danger-text)" />
               <div>
-                <strong style={{ color: '#fff', fontSize: '14px', display: 'block' }}>Database Synchronization Notice</strong>
-                <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '13px' }}>{error}</span>
+                <strong style={{ color: 'var(--text-primary)', fontSize: '14px', display: 'block' }}>Database Synchronization Notice</strong>
+                <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{error}</span>
               </div>
             </div>
             {onRetry && (
@@ -398,7 +398,7 @@ export default function FacultyDashboard({
         <section className="faculty-queue-section">
           {isLoading && submissions.length === 0 ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              <div className="skeleton-pulse" style={{ width: '40px', height: '40px', borderRadius: '50%', margin: '0 auto 16px', background: 'rgba(99, 102, 241, 0.2)' }} />
+              <div className="skeleton-pulse" style={{ width: '40px', height: '40px', borderRadius: '50%', margin: '0 auto 16px', background: 'var(--accent-subtle)' }} />
               <p>Loading authorized submissions for Batches {batchesText}...</p>
             </div>
           ) : (

@@ -124,12 +124,12 @@ export default function AuditLogDrawer({ isOpen, onClose }) {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     {isBlur ? (
-                      <AlertTriangle size={15} color="var(--warning-light)" />
+                      <AlertTriangle size={15} color="var(--warning)" />
                     ) : (
-                      <CheckCircle size={15} color="var(--cyan-light)" />
+                      <CheckCircle size={15} color="var(--info)" />
                     )}
                     <div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#ffffff' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
                         {isBlur ? 'Window Blur (Tab Switch)' : 'Focus Restored'}
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>

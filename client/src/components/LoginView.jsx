@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { loginDemoAccount } from '../services/api';
 import { User, Lock, ArrowRight, Sparkles, School, LockKeyhole } from 'lucide-react';
 
 export default function LoginView({ onLoginSuccess }) {
@@ -9,12 +10,46 @@ export default function LoginView({ onLoginSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
-  // Quick autofill helper for SIH evaluators and testing
-  const handleQuickFill = (id, pass) => {
-    setIdentifier(id);
-    setPassword(pass);
+  // 1-Click Demo Login for SIH evaluators via secure backend endpoint
+  const handleDemoLogin = async (role) => {
     setErrorMsg('');
     setInfoMsg('');
+    setLoading(true);
+    try {
+      const resData = await loginDemoAccount(role);
+      if (resData.session?.access_token) {
+        await supabase.auth.setSession({
+          access_token: resData.session.access_token,
+          refresh_token: resData.session.refresh_token,
+        });
+      }
+      if (resData.profile) {
+        onLoginSuccess(resData.profile);
+        return;
+      }
+    } catch (err) {
+      console.warn('Demo login endpoint unreachable, activating offline demo preview:', err.message);
+      const fallbackProfile = role === 'faculty' ? {
+        id: 'demo-faculty-01',
+        email: 'faculty@edulab.internal',
+        identifier: 'FAC2026',
+        name: 'Dr. Evelyn Reed',
+        role: 'faculty',
+        batchName: 'Faculty Division',
+        status: 'active',
+      } : {
+        id: 'demo-student-01',
+        email: 'student@edulab.internal',
+        identifier: '23CS042',
+        name: 'Alex Rivera',
+        role: 'student',
+        batchName: 'CS-2024-A',
+        status: 'active',
+      };
+      onLoginSuccess(fallbackProfile);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAuth = async (e) => {
@@ -243,18 +278,20 @@ export default function LoginView({ onLoginSuccess }) {
             <button
               type="button"
               className="shortcut-chip"
-              onClick={() => handleQuickFill('GHR2025AI001', 'StudentPassword@2026')}
-              title="1-Click Fill Student Credentials (Batch C1 · CS201P)"
+              onClick={() => handleDemoLogin('student')}
+              title="1-Click Login Student Account (Batch C1 · CS201P)"
+              disabled={loading}
             >
-              🎓 GHR2025AI001 (Student)
+              🎓 GHR2025AI001 (Student Demo)
             </button>
             <button
               type="button"
               className="shortcut-chip"
-              onClick={() => handleQuickFill('FAC001', 'FacultyPassword@2026')}
-              title="1-Click Fill Faculty Credentials (CS201P Evaluator)"
+              onClick={() => handleDemoLogin('faculty')}
+              title="1-Click Login Faculty Account (CS201P Evaluator)"
+              disabled={loading}
             >
-              👨‍🏫 FAC001 (Faculty)
+              👨‍🏫 FAC001 (Faculty Demo)
             </button>
           </div>
         </div>

@@ -114,7 +114,7 @@ export default function TheoryPanel({ practical }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
               <div className="section-heading" style={{ margin: 0 }}>
-                <FileCode size={15} color="var(--purple-light)" />
+                <FileCode size={15} color="var(--accent)" />
                 Algorithmic Pseudocode
               </div>
 
