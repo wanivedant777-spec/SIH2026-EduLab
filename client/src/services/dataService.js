@@ -120,7 +120,7 @@ export async function getSubmissions(studentId = null) {
         ? ev.marks_performing
         : s.total_test_cases
         ? ((s.passed_test_cases / s.total_test_cases) * 3.0).toFixed(1)
-        : 3.0
+        : 0.0
     );
     const writing = parseFloat(ev.marks_writing || 0.0);
     const viva = parseFloat(ev.marks_viva || 0.0);
@@ -130,11 +130,11 @@ export async function getSubmissions(studentId = null) {
 
     return {
       id: s.id, // Real database-generated UUID
-      prn: profile.identifier || 'GHR2025AI001',
+      prn: profile.identifier || 'Unassigned',
       studentId: s.student_id,
       studentName: profile.full_name || 'Student',
-      rollNumber: profile.identifier || 'GHR2025AI001',
-      batchName: profile.batches?.name || 'C1',
+      rollNumber: profile.identifier || 'Unassigned',
+      batchName: profile.batches?.name || 'Unassigned',
       practicalId: s.practical_id,
       practicalTitle: practical.title
         ? practical.title.startsWith('Practical')
@@ -147,11 +147,11 @@ export async function getSubmissions(studentId = null) {
       writeupMarks: Math.min(5.0, writing),
       vivaMarks: Math.min(2.0, viva),
       totalMarks: Math.min(10.0, total),
-      passRate: s.total_test_cases ? Math.round((s.passed_test_cases / s.total_test_cases) * 100) : 100,
+      passRate: s.total_test_cases ? Math.round((s.passed_test_cases / s.total_test_cases) * 100) : 0,
       passedCount: s.passed_test_cases || 0,
       totalCount: s.total_test_cases || 0,
       adaptiveTier: s.passed_test_cases === s.total_test_cases ? 'Advanced' : s.passed_test_cases > 0 ? 'Proficient' : 'Beginner',
-      timeSpentMin: Math.max(1, Math.round((s.time_spent_seconds || 300) / 60)),
+      timeSpentMin: Math.round((s.time_spent_seconds || 0) / 60),
       focusBlurEvents: 0,
       status: isGraded ? 'Graded' : 'Pending Review',
       submittedAt: new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -202,10 +202,10 @@ export async function submitStudentPractical(subData) {
     id: data.id,
     dbCommitted: true,
     dbError: null,
-    prn: subData.prn || 'GHR2025AI001',
+    prn: subData.prn || 'Unassigned',
     studentId: subData.studentId,
     studentName: subData.studentName || 'Student',
-    rollNumber: subData.rollNumber || 'GHR2025AI001',
+    rollNumber: subData.rollNumber || 'Unassigned',
     practicalId: subData.practicalId,
     practicalTitle: subData.practicalTitle,
     language: subData.language,
@@ -216,9 +216,9 @@ export async function submitStudentPractical(subData) {
     totalMarks: Math.min(3.0, parseFloat(subData.codingMarks || 0.0)),
     passRate: subData.passRate || 0,
     passedCount: subData.passedCount || 0,
-    totalCount: subData.totalCount || 3,
+    totalCount: subData.totalCount || 0,
     adaptiveTier: subData.adaptiveTier || 'Beginner',
-    timeSpentMin: Math.max(1, Math.round((subData.timeSpentSeconds || 300) / 60)),
+    timeSpentMin: Math.round((subData.timeSpentSeconds || 0) / 60),
     focusBlurEvents: subData.focusBlurEvents || 0,
     status: 'Pending Review',
     submittedAt: 'Just now',
@@ -348,19 +348,19 @@ export function computeBatchMetrics(submissions = []) {
   const beginner = submissions.filter((s) => s.adaptiveTier === 'Beginner').length;
 
   return {
-    totalStudents: uniqueStudents || 1,
+    totalStudents: uniqueStudents,
     totalSubmissions: total,
     pendingSubmissions: total - graded.length,
     gradedSubmissions: graded.length,
     rubricAverages: {
-      coding: graded.length ? parseFloat((codingSum / graded.length).toFixed(1)) : 3.0,
-      writing: graded.length ? parseFloat((writingSum / graded.length).toFixed(1)) : 4.5,
-      viva: graded.length ? parseFloat((vivaSum / graded.length).toFixed(1)) : 2.0,
+      coding: graded.length ? parseFloat((codingSum / graded.length).toFixed(1)) : 0.0,
+      writing: graded.length ? parseFloat((writingSum / graded.length).toFixed(1)) : 0.0,
+      viva: graded.length ? parseFloat((vivaSum / graded.length).toFixed(1)) : 0.0,
     },
     tierBreakdown: {
-      advanced: total ? Math.round((advanced / total) * 100) : 50,
-      proficient: total ? Math.round((proficient / total) * 100) : 40,
-      beginner: total ? Math.round((beginner / total) * 100) : 10,
+      advanced: total ? Math.round((advanced / total) * 100) : 0,
+      proficient: total ? Math.round((proficient / total) * 100) : 0,
+      beginner: total ? Math.round((beginner / total) * 100) : 0,
     },
   };
 }

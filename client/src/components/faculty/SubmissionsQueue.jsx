@@ -26,6 +26,17 @@ export default function SubmissionsQueue({
   const [sortBy, setSortBy] = useState('time'); // 'time' | 'total' | 'prn' | 'integrity'
   const [sortOrder, setSortOrder] = useState('desc');
 
+  // Dynamic practical options from real submissions
+  const practicalOptions = useMemo(() => {
+    const map = new Map();
+    submissions.forEach((s) => {
+      if (s.practicalId && s.practicalTitle) {
+        map.set(s.practicalId, s.practicalTitle);
+      }
+    });
+    return Array.from(map.entries());
+  }, [submissions]);
+
   // Filter & Search Logic
   const filteredSubmissions = useMemo(() => {
     return submissions.filter((sub) => {
@@ -49,7 +60,7 @@ export default function SubmissionsQueue({
 
       // Practical filter
       const matchesPractical =
-        practicalFilter === 'all' || (sub.practicalId && sub.practicalId.includes(practicalFilter));
+        practicalFilter === 'all' || sub.practicalId === practicalFilter;
 
       // Tier filter
       const matchesTier =
@@ -127,10 +138,9 @@ export default function SubmissionsQueue({
             title="Filter by assigned practical"
           >
             <option value="all">All Experiments</option>
-            <option value="bst">Practical 04: BST &amp; Traversal</option>
-            <option value="avl">Practical 05: AVL Balancing</option>
-            <option value="dijkstra">Practical 06: Dijkstra Routing</option>
-            <option value="scheduling">Practical 02: CPU Scheduling</option>
+            {practicalOptions.map(([id, title]) => (
+              <option key={id} value={id}>{title}</option>
+            ))}
           </select>
 
           {/* Tier Filter Dropdown */}
@@ -259,7 +269,7 @@ export default function SubmissionsQueue({
                   <tr key={sub.id} className={`queue-table-row ${hasFlags ? 'row-flagged' : ''}`}>
                     {/* 1. PRN */}
                     <td className="cell-prn">
-                      <span className="prn-badge">{sub.prn || 'PRN2026CS000'}</span>
+                      <span className="prn-badge">{sub.prn || sub.rollNumber || 'Unassigned'}</span>
                     </td>
 
                     {/* 2. Student */}

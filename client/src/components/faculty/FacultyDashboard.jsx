@@ -18,10 +18,10 @@ import AuditLogDrawer from './AuditLogDrawer';
 import Button from '../ui/Button';
 
 export default function FacultyDashboard({
-  currentUser: _currentUser,
+  currentUser,
   facultyAllocations = [],
   submissions = [],
-  batchMetrics,
+  batchMetrics: _batchMetrics,
   isLoading = false,
   error = null,
   onRetry,
@@ -41,11 +41,12 @@ export default function FacultyDashboard({
     setIsAuditOpen(true);
   };
 
-  // Derive allocated batches and subject info
+  // Derive allocated batches and subject info - NEVER invent C1/C2/C3 when empty
   const batchNames = facultyAllocations.map((a) => a.batches?.name).filter(Boolean);
-  const batchesText = batchNames.length ? batchNames.join(', ') : 'C1, C2, C3';
-  const subjectCode = facultyAllocations[0]?.subjects?.code || 'CS201P';
-  const subjectName = facultyAllocations[0]?.subjects?.name || 'Data Structures';
+  const hasAllocations = batchNames.length > 0;
+  const batchesText = hasAllocations ? batchNames.join(', ') : 'None';
+  const subjectCode = facultyAllocations[0]?.subjects?.code || '';
+  const subjectName = facultyAllocations[0]?.subjects?.name || '';
 
   // Live calculated stats
   const totalSubmissions = submissions.length;
@@ -60,45 +61,43 @@ export default function FacultyDashboard({
   const totalMarksSum = gradedSubmissions.reduce((acc, s) => acc + (s.totalMarks || 0), 0);
 
   const rubricAverages = {
-    coding: gradedSubmissions.length ? (codingSum / gradedSubmissions.length).toFixed(1) : '3.0',
+    coding: gradedSubmissions.length ? (codingSum / gradedSubmissions.length).toFixed(1) : '0.0',
     writing: gradedSubmissions.length ? (writingSum / gradedSubmissions.length).toFixed(1) : '0.0',
     viva: gradedSubmissions.length ? (vivaSum / gradedSubmissions.length).toFixed(1) : '0.0',
   };
 
   const averagePerformance = gradedSubmissions.length
     ? `${(totalMarksSum / gradedSubmissions.length).toFixed(1)} / 10`
-    : totalSubmissions
-    ? '3.0 / 10'
     : '0.0 / 10';
 
   const completionRate = totalSubmissions
     ? Math.round((gradedSubmissions.length / totalSubmissions) * 100)
     : 0;
 
-  // Live tier distribution
+  // Live tier distribution from real submissions
   const advancedCount = submissions.filter((s) => s.adaptiveTier === 'Advanced').length;
   const proficientCount = submissions.filter((s) => s.adaptiveTier === 'Proficient').length;
   const beginnerCount = submissions.filter((s) => s.adaptiveTier === 'Beginner').length;
 
   const tierBreakdown = {
-    advanced: totalSubmissions ? Math.round((advancedCount / totalSubmissions) * 100) : (batchMetrics?.tierBreakdown?.advanced || 50),
-    proficient: totalSubmissions ? Math.round((proficientCount / totalSubmissions) * 100) : (batchMetrics?.tierBreakdown?.proficient || 40),
-    beginner: totalSubmissions ? Math.round((beginnerCount / totalSubmissions) * 100) : (batchMetrics?.tierBreakdown?.beginner || 10),
+    advanced: totalSubmissions ? Math.round((advancedCount / totalSubmissions) * 100) : 0,
+    proficient: totalSubmissions ? Math.round((proficientCount / totalSubmissions) * 100) : 0,
+    beginner: totalSubmissions ? Math.round((beginnerCount / totalSubmissions) * 100) : 0,
   };
 
   const handleExportCSV = () => {
-    const headers = ['PRN', 'Student Name', 'Roll Number', 'Batch', 'Practical', 'Coding (3M)', 'Writing (5M)', 'Viva (2M)', 'Total (10M)', 'Adaptive Tier', 'Integrity Status', 'Status'];
+    const headers = ['PRN', 'Student Name', 'Roll Number', 'Batch', 'Practical', 'Coding (3M Auto)', 'Writing (5M Faculty)', 'Viva (2M Faculty)', 'Total (10M)', 'Adaptive Tier', 'Integrity Status', 'Status'];
     const rows = submissions.map((s) => [
-      s.prn || 'GHR2025AI001',
+      s.prn || 'N/A',
       s.studentName,
       s.rollNumber,
-      s.batchName || 'C1',
+      s.batchName || 'Unassigned',
       s.practicalTitle,
       s.codingMarks || 0,
       s.writeupMarks || 0,
       s.vivaMarks || 0,
       s.totalMarks || 0,
-      s.adaptiveTier || 'Proficient',
+      s.adaptiveTier || 'Beginner',
       s.focusBlurEvents > 0 ? `${s.focusBlurEvents} Blurs (Flagged)` : 'Verified Clean',
       s.status,
     ]);
@@ -107,7 +106,7 @@ export default function FacultyDashboard({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `EduLab_${subjectCode}_Batches_${batchesText.replace(/,\s*/g, '_')}_10Mark_Gradebook_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `EduLab_${subjectCode || 'Console'}_10Mark_Gradebook_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -151,13 +150,19 @@ export default function FacultyDashboard({
           <div className="command-header-left">
             <div className="faculty-context-tag">
               <span className="context-dot" />
-              <span>FACULTY ACADEMIC CONSOLE · BATCHES {batchesText}</span>
+              <span>
+                {hasAllocations
+                  ? `FACULTY ACADEMIC CONSOLE · BATCHES ${batchesText}`
+                  : 'FACULTY ACADEMIC CONSOLE · AWAITING BATCH ALLOCATION'}
+              </span>
             </div>
             <h1 className="faculty-command-title">
               Lab Evaluation &amp; Analytics Command Center
             </h1>
             <p className="faculty-command-subtitle">
-              {subjectCode}: {subjectName} Lab · Academic Year 2025-26 (Sem IV) · AICTE &amp; NEP 2020 10-Mark Rubric Assessment
+              {hasAllocations
+                ? `${subjectCode}: ${subjectName} · Academic Year 2025-26 (Sem IV) · AICTE 10-Mark Rubric Assessment`
+                : 'Awaiting Department Batch & Subject Allocations · AICTE 10-Mark Rubric Console'}
             </p>
           </div>
 
@@ -178,6 +183,7 @@ export default function FacultyDashboard({
               icon={Download}
               onClick={handleExportCSV}
               title="Export complete 10-Mark Rubric Gradebook in CSV format"
+              disabled={submissions.length === 0}
             >
               Export NEP Gradebook
             </Button>
@@ -197,11 +203,11 @@ export default function FacultyDashboard({
               </div>
             </div>
             <div className="metric-card-number-row">
-              <span className="metric-card-val">{uniqueStudents || 1}</span>
-              <span className="metric-card-unit">Enrolled</span>
+              <span className="metric-card-val">{uniqueStudents}</span>
+              <span className="metric-card-unit">Students</span>
             </div>
             <div className="metric-card-subtext">
-              <span>Batches {batchesText} · Active Cohort</span>
+              <span>{hasAllocations ? `Batches ${batchesText}` : 'No active cohorts'}</span>
             </div>
           </div>
 
@@ -215,7 +221,7 @@ export default function FacultyDashboard({
             </div>
             <div className="metric-card-number-row">
               <span className="metric-card-val">{completionRate}%</span>
-              <span className="metric-card-unit">({gradedSubmissions.length}/{totalSubmissions || 1})</span>
+              <span className="metric-card-unit">({gradedSubmissions.length}/{totalSubmissions})</span>
             </div>
             <div className="progress-track" style={{ height: '4px', marginTop: '6px' }}>
               <div
@@ -224,7 +230,9 @@ export default function FacultyDashboard({
               />
             </div>
             <div className="metric-card-subtext" style={{ marginTop: '6px' }}>
-              <span className="text-success">{pendingCount} pending grading</span>
+              <span className={pendingCount > 0 ? 'text-warning' : 'text-success'}>
+                {pendingCount} pending grading
+              </span>
             </div>
           </div>
 
@@ -258,7 +266,9 @@ export default function FacultyDashboard({
               <span className="metric-card-unit">Submissions</span>
             </div>
             <div className="metric-card-subtext">
-              <span className="text-warning">Awaiting 5M Write-up / 2M Viva input</span>
+              <span className="text-warning">
+                {pendingCount > 0 ? 'Awaiting 5M Journal / 2M Viva verification' : 'All submissions evaluated'}
+              </span>
             </div>
           </div>
 
@@ -279,7 +289,9 @@ export default function FacultyDashboard({
               <span className="metric-card-unit">Integrity Alerts</span>
             </div>
             <div className="metric-card-subtext">
-              <span className="text-danger">&gt; 2 Tab Blurs · Review required</span>
+              <span className="text-danger">
+                {flaggedCount > 0 ? `${flaggedCount} requires faculty review` : 'Zero focus violations'}
+              </span>
             </div>
           </div>
         </section>
@@ -295,7 +307,7 @@ export default function FacultyDashboard({
                 <Layers size={14} color="var(--accent-text)" />
                 <span>AICTE Adaptive Difficulty Distribution</span>
               </div>
-              <span className="panel-head-tag">Live Submission Data</span>
+              <span className="panel-head-tag">Live Submissions</span>
             </div>
 
             <div className="tier-dist-bars">
@@ -303,7 +315,7 @@ export default function FacultyDashboard({
               <div className="tier-dist-item">
                 <div className="tier-dist-label-row">
                   <span className="tier-name">Advanced Tier (Hard / Optimal Height Invariants)</span>
-                  <span className="tier-pct">{tierBreakdown.advanced}% ({advancedCount || (totalSubmissions ? 0 : 1)} Student)</span>
+                  <span className="tier-pct">{tierBreakdown.advanced}% ({advancedCount} Students)</span>
                 </div>
                 <div className="progress-track" style={{ height: '5px' }}>
                   <div className="progress-fill fill-accent" style={{ width: `${tierBreakdown.advanced}%` }} />
@@ -336,7 +348,12 @@ export default function FacultyDashboard({
             <div className="tier-remediation-callout">
               <Sparkles size={13} color="var(--warning-text)" />
               <span>
-                <strong>Remediation Recommendation:</strong> Batch {batchesText} students in Beginner tier recommended for assisted pseudocode walkthrough.
+                <strong>Remediation Recommendation:</strong>{' '}
+                {totalSubmissions === 0
+                  ? 'No submissions to evaluate yet. Adaptive difficulty recommendations will appear dynamically as students submit code.'
+                  : beginnerCount > 0
+                  ? `${beginnerCount} student(s) in Beginner tier recommended for assisted pseudocode walkthrough.`
+                  : 'All evaluated submissions performing in Proficient/Advanced bands.'}
               </span>
             </div>
           </div>
@@ -396,9 +413,11 @@ export default function FacultyDashboard({
 
         {/* Modals & Drawers */}
         <GradingModal
+          key={selectedSubmission?.id || 'modal'}
           isOpen={isGradingOpen}
           onClose={() => setIsGradingOpen(false)}
           submission={selectedSubmission}
+          currentUser={currentUser}
           onSaveGrade={onSaveGrade}
         />
 

@@ -1,52 +1,8 @@
 import React from 'react';
-import { History, CheckCircle2, Award, Terminal, FileText, Sparkles } from 'lucide-react';
+import { History, CheckCircle2, Award, Terminal, FileText, Sparkles, Inbox } from 'lucide-react';
 
-
-export default function RecentActivity({ activities }) {
-  const defaultActivities = [
-    {
-      id: 'act_01',
-      title: 'Passed 3/3 Test Cases · Practical 04: BST',
-      type: 'test_pass',
-      timestamp: 'Just now',
-      detail: 'Runtime 18ms · Memory 4.2 MB · 5.0 / 5.0 Coding Marks awarded',
-      status: 'success',
-    },
-    {
-      id: 'act_02',
-      title: 'Viva Voce Verified · Dr. S. Rao',
-      type: 'viva',
-      timestamp: '2 hours ago',
-      detail: 'Oral defense on Inorder Traversal & BST invariants · 2.0 / 2.0 Marks',
-      status: 'verified',
-    },
-    {
-      id: 'act_03',
-      title: 'Submitted Practical 03: Queue Implementations',
-      type: 'submission',
-      timestamp: 'Yesterday',
-      detail: 'Total 9.2 / 10.0 M · Graded by Lab Instructor · Feedback: Excellent circular buffer design',
-      status: 'graded',
-    },
-    {
-      id: 'act_04',
-      title: 'Earned "Tier 1: Advanced Algorithmist" Badge',
-      type: 'badge',
-      timestamp: '2 days ago',
-      detail: 'NEP 2020 Level 5 Skill Criteria Met · 100% hidden test pass rate across 3 practicals',
-      status: 'achievement',
-    },
-    {
-      id: 'act_05',
-      title: 'Journal Write-up Approved',
-      type: 'writeup',
-      timestamp: '4 days ago',
-      detail: 'Aim, Algorithm, Pseudocode, and Complexity analysis verified · 2.8 / 3.0 M',
-      status: 'verified',
-    },
-  ];
-
-  const items = activities && activities.length ? activities : defaultActivities;
+export default function RecentActivity({ activities = [] }) {
+  const hasActivities = Array.isArray(activities) && activities.length > 0;
 
   const getActivityIcon = (type) => {
     switch (type) {
@@ -67,36 +23,74 @@ export default function RecentActivity({ activities }) {
     <div className="dashboard-section activity-section">
       <div className="section-header">
         <div>
-          <h2 className="section-title">Recent Activity & Audit Trail</h2>
+          <h2 className="section-title">Recent Activity &amp; Audit Trail</h2>
           <p className="section-subtitle">
             Chronological log of compiler executions, rubric grades, and verified milestones
           </p>
         </div>
         <div className="section-meta-tag">
           <History size={13} color="var(--accent-text)" />
-          <span>Real-Time Event Stream</span>
+          <span>{hasActivities ? `${activities.length} Recorded Events` : 'Real-Time Event Stream'}</span>
         </div>
       </div>
 
-      <div className="activity-timeline">
-        {items.map((act) => (
-          <div key={act.id} className="timeline-item">
-            {/* Timeline Icon Node */}
-            <div className={`timeline-icon-node node-${act.type || 'default'}`}>
-              {getActivityIcon(act.type)}
-            </div>
-
-            {/* Timeline Content */}
-            <div className="timeline-content-card">
-              <div className="timeline-content-head">
-                <span className="timeline-item-title">{act.title}</span>
-                <span className="timeline-timestamp">{act.timestamp}</span>
-              </div>
-              <p className="timeline-item-detail">{act.detail}</p>
-            </div>
+      {!hasActivities ? (
+        <div
+          className="activity-empty-state"
+          style={{
+            padding: '40px 20px',
+            textAlign: 'center',
+            background: 'rgba(255, 255, 255, 0.02)',
+            borderRadius: '16px',
+            border: '1px dashed rgba(255, 255, 255, 0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '50%',
+              background: 'rgba(99, 102, 241, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '12px',
+            }}
+          >
+            <Inbox size={22} color="var(--accent-text)" />
           </div>
-        ))}
-      </div>
+          <h4 style={{ color: '#fff', fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>
+            No Activity Recorded Yet
+          </h4>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px', maxWidth: '380px', margin: 0, lineHeight: 1.5 }}>
+            Your compiler test executions, code submissions, and faculty evaluations will appear here in chronological order.
+          </p>
+        </div>
+      ) : (
+        <div className="activity-timeline">
+          {activities.map((act) => (
+            <div key={act.id} className="timeline-item">
+              {/* Timeline Icon Node */}
+              <div className={`timeline-icon-node node-${act.type || 'default'}`}>
+                {getActivityIcon(act.type)}
+              </div>
+
+              {/* Timeline Content */}
+              <div className="timeline-content-card">
+                <div className="timeline-content-head">
+                  <span className="timeline-item-title">{act.title}</span>
+                  <span className="timeline-timestamp">{act.timestamp}</span>
+                </div>
+                <p className="timeline-item-detail">{act.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

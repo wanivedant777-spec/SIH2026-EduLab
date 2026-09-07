@@ -56,7 +56,7 @@ export default function TheoryPanel({ practical }) {
             </span>
             <span style={{ color: 'var(--border-strong)' }}>•</span>
             <span style={{ fontSize: '11px', color: 'var(--cyan-light)', fontWeight: 600 }}>
-              Rubric: 5 Coding + 3 Write-up + 2 Viva
+              Rubric: 3 Coding (Auto) + 5 Writing (Faculty) + 2 Viva (Faculty)
             </span>
           </div>
         </div>

@@ -19,6 +19,7 @@ import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 
 export default function Terminal({
+  practical,
   evaluationResult,
   isRunning,
   evaluationPhase = 'idle',
@@ -35,12 +36,29 @@ export default function Terminal({
   const [isCopied, setIsCopied] = useState(false);
   const consoleEndRef = useRef(null);
 
+  // Derive test cases from live evaluationResult, or practical testCases, or empty
+  const testCasesList = evaluationResult?.test_case_results || (practical?.testCases || []).map((tc, idx) => ({
+    test_case_index: idx + 1,
+    is_sample: tc.is_sample ?? (idx === 0),
+    passed: null,
+    status: 'Not Run',
+    input: tc.input_data || '',
+    expected_output: tc.expected_output || '',
+    stdout: '',
+    execution_time_sec: null,
+    memory_kb: null,
+  }));
+
   const tabs = [
     {
       id: 'testcases',
       label: 'Test Cases & Rubric',
       icon: CheckCircle,
-      badge: evaluationResult ? `${evaluationResult.passed_test_cases}/${evaluationResult.total_test_cases}` : '3 Tests',
+      badge: evaluationResult
+        ? `${evaluationResult.passed_test_cases}/${evaluationResult.total_test_cases}`
+        : testCasesList.length
+        ? `${testCasesList.length} Tests`
+        : '0 Tests',
     },
     { id: 'console', label: 'Console & Compiler Stream', icon: TerminalIcon },
     { id: 'metrics', label: 'Telemetry & Profiling', icon: Activity },
@@ -86,42 +104,7 @@ export default function Terminal({
     }
   };
 
-  // Test cases data from evaluationResult or default catalog
-  const testCasesList = evaluationResult?.test_case_results || [
-    {
-      test_case_index: 1,
-      is_sample: true,
-      passed: true,
-      status: 'Passed',
-      input: '4\n10 5 20 15',
-      expected_output: '5 10 15 20',
-      stdout: '5 10 15 20',
-      execution_time_sec: 0.018,
-      memory_kb: 1240,
-    },
-    {
-      test_case_index: 2,
-      is_sample: false,
-      passed: true,
-      status: 'Passed',
-      input: '5\n30 20 40 10 25',
-      expected_output: '10 20 25 30 40',
-      stdout: '10 20 25 30 40',
-      execution_time_sec: 0.021,
-      memory_kb: 1280,
-    },
-    {
-      test_case_index: 3,
-      is_sample: false,
-      passed: true,
-      status: 'Passed',
-      input: '1\n42',
-      expected_output: '42',
-      stdout: '42',
-      execution_time_sec: 0.015,
-      memory_kb: 1190,
-    },
-  ];
+
 
   return (
     <div className="terminal-pane">
@@ -229,17 +212,20 @@ export default function Terminal({
                           DEMO / SIMULATION
                         </Badge>
                       )}
-                      {evaluationResult.adaptive_tiering && (
-                        <Badge variant="tier-advanced">
-                          <Sparkles size={11} />
-                          {evaluationResult.adaptive_tiering.assigned_tier} Tier
-                        </Badge>
-                      )}
+                      <Badge tier={evaluationResult.adaptive_tiering?.assigned_tier || evaluationResult.adaptiveTier || 'Proficient'}>
+                        {evaluationResult.adaptive_tiering?.assigned_tier || evaluationResult.adaptiveTier || 'Proficient'} Tier
+                      </Badge>
                     </div>
-                    <p className="showcase-reasoning">
-                      {evaluationResult.adaptive_tiering?.reasoning ||
-                        'Optimal BST invariant preserved. Code passed test suites within runtime bounds.'}
-                    </p>
+
+                    <div className="showcase-title-block">
+                      <h3 className="showcase-title">
+                        {evaluationResult.adaptive_tiering?.assigned_tier || 'Proficient'} Level Assessment
+                      </h3>
+                      <p className="showcase-reasoning">
+                        {evaluationResult.adaptive_tiering?.reasoning ||
+                          `Code executed against test suites: ${evaluationResult.passed_test_cases}/${evaluationResult.total_test_cases} passed.`}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -247,19 +233,19 @@ export default function Terminal({
                   <div className="showcase-stat-item">
                     <span className="stat-item-label">Runtime Latency</span>
                     <span className="stat-item-val">
-                      {testCasesList[0]?.execution_time_sec ? `${Math.round(testCasesList[0].execution_time_sec * 1000)} ms (Avg)` : '18 ms (Avg)'}
+                      {testCasesList[0]?.execution_time_sec ? `${Math.round(testCasesList[0].execution_time_sec * 1000)} ms` : '--'}
                     </span>
                   </div>
                   <div className="showcase-stat-item">
                     <span className="stat-item-label">Peak Memory</span>
                     <span className="stat-item-val">
-                      {testCasesList[0]?.memory_kb ? `${(testCasesList[0].memory_kb / 1024).toFixed(2)} MB` : '1.24 MB'}
+                      {testCasesList[0]?.memory_kb ? `${(testCasesList[0].memory_kb / 1024).toFixed(2)} MB` : '--'}
                     </span>
                   </div>
                   <div className="showcase-stat-item">
                     <span className="stat-item-label">Next Curricular Level</span>
                     <span className="stat-item-val stat-val-accent">
-                      {evaluationResult.adaptive_tiering?.recommended_difficulty || 'Hard'} Level
+                      {evaluationResult.adaptive_tiering?.recommended_difficulty || 'Next'} Level
                     </span>
                   </div>
                 </div>
@@ -268,63 +254,77 @@ export default function Terminal({
 
             {/* Test Cases Accordion List */}
             <div className="test-cases-list">
-              {testCasesList.map((tc) => {
-                const isExpanded = !!expandedCases[tc.test_case_index];
-                const isCurrentActive = isRunning && activeTestIndex === tc.test_case_index - 1;
+              {testCasesList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)' }}>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>No test cases registered for this practical.</p>
+                  <p style={{ margin: '6px 0 0 0', fontSize: '0.78rem' }}>Test cases will appear once loaded from the curriculum database.</p>
+                </div>
+              ) : (
+                testCasesList.map((tc) => {
+                  const isExpanded = !!expandedCases[tc.test_case_index];
+                  const isCurrentActive = isRunning && activeTestIndex === tc.test_case_index - 1;
 
-                return (
-                  <div
-                    key={tc.test_case_index}
-                    className={`test-case-row ${tc.passed ? 'passed' : 'failed'} ${
-                      isCurrentActive ? 'tc-active-evaluating' : ''
-                    }`}
-                  >
-                    {/* Header Row */}
+                  return (
                     <div
-                      className="tc-summary"
-                      onClick={() => toggleExpand(tc.test_case_index)}
-                      title="Click to expand/collapse test case inputs & diffs"
+                      key={tc.test_case_index}
+                      className={`test-case-row ${tc.passed === true ? 'passed' : tc.passed === false ? 'failed' : 'not-run'} ${
+                        isCurrentActive ? 'tc-active-evaluating' : ''
+                      }`}
                     >
-                      <div className="tc-name">
-                        <button type="button" className="tc-expand-btn">
-                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                        </button>
+                      {/* Header Row */}
+                      <div
+                        className="tc-summary"
+                        onClick={() => toggleExpand(tc.test_case_index)}
+                        title="Click to expand/collapse test case inputs & diffs"
+                      >
+                        <div className="tc-name">
+                          <button type="button" className="tc-expand-btn">
+                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </button>
 
-                        {isCurrentActive ? (
-                          <Zap size={15} className="animate-spin text-accent" />
-                        ) : tc.passed ? (
-                          <CheckCircle size={15} color="var(--success)" />
-                        ) : (
-                          <XCircle size={15} color="var(--danger)" />
-                        )}
+                          {isCurrentActive ? (
+                            <Zap size={15} className="animate-spin text-accent" />
+                          ) : tc.passed === true ? (
+                            <CheckCircle size={15} color="var(--success)" />
+                          ) : tc.passed === false ? (
+                            <XCircle size={15} color="var(--danger)" />
+                          ) : (
+                            <Clock size={15} color="var(--text-muted)" />
+                          )}
 
-                        <span className="tc-title-text">
-                          Test Case #{tc.test_case_index}{' '}
-                          <span className="tc-type-tag">
-                            {tc.is_sample ? '(Sample Public Input)' : '(Hidden AICTE Invariant)'}
+                          <span className="tc-title-text">
+                            Test Case #{tc.test_case_index}{' '}
+                            <span className="tc-type-tag">
+                              {tc.is_sample ? '(Sample Public Input)' : '(Curriculum Test Case)'}
+                            </span>
                           </span>
-                        </span>
-                      </div>
+                        </div>
 
-                      <div className="tc-telemetry-row">
-                        {isCurrentActive ? (
-                          <Badge variant="warning">Evaluating in Sandbox...</Badge>
-                        ) : (
-                          <Badge variant={tc.passed ? 'success' : 'danger'}>
-                            {tc.passed ? 'Passed (Match)' : 'Failed'}
-                          </Badge>
-                        )}
+                        <div className="tc-telemetry-row">
+                          {isCurrentActive ? (
+                            <Badge variant="warning">Evaluating in Sandbox...</Badge>
+                          ) : tc.passed === null || tc.status === 'Not Run' ? (
+                            <Badge variant="neutral">Not Run</Badge>
+                          ) : (
+                            <Badge variant={tc.passed ? 'success' : 'danger'}>
+                              {tc.passed ? 'Passed (Match)' : 'Failed'}
+                            </Badge>
+                          )}
 
-                        <span className="tc-meta-pill">
-                          <Clock size={11} />
-                          {tc.execution_time_sec}s
-                        </span>
-                        <span className="tc-meta-pill">
-                          <Cpu size={11} />
-                          {tc.memory_kb} KB
-                        </span>
+                          {tc.execution_time_sec !== null && tc.execution_time_sec !== undefined && (
+                            <span className="tc-meta-pill">
+                              <Clock size={11} />
+                              {tc.execution_time_sec}s
+                            </span>
+                          )}
+                          {tc.memory_kb !== null && tc.memory_kb !== undefined && (
+                            <span className="tc-meta-pill">
+                              <Cpu size={11} />
+                              {tc.memory_kb} KB
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
                     {/* Expandable IO & Diff Body */}
                     {isExpanded && (
@@ -375,8 +375,9 @@ export default function Terminal({
                     )}
                   </div>
                 );
-              })}
-            </div>
+              })
+            )}
+          </div>
           </div>
         )}
 
@@ -445,18 +446,18 @@ Ready for compilation. Click "Run Code" above to execute.`}
                   <Clock size={15} color="var(--accent-text)" />
                 </div>
                 <div className="profiling-big-stat">
-                  <span className="stat-val">18 ms</span>
+                  <span className="stat-val">{evaluationResult ? `${Math.round((testCasesList[0]?.execution_time_sec || 0.015) * 1000)} ms` : '--'}</span>
                   <span className="stat-sub">vs 2,000 ms Time Limit</span>
                 </div>
                 <div className="progress-track" style={{ marginTop: '8px', height: '6px' }}>
                   <div
                     className="progress-fill fill-success"
-                    style={{ width: '0.9%' }}
-                    title="0.9% of allowable execution time limit"
+                    style={{ width: evaluationResult ? `${Math.min(100, Math.max(1, Math.round(((testCasesList[0]?.execution_time_sec || 0.015) / 2.0) * 100)))}%` : '0%' }}
+                    title="Allowable execution time limit"
                   />
                 </div>
                 <p className="profiling-caption">
-                  Optimal binary search tree height $h \le \log_2(N)$ gives $O(\log N)$ average insertion runtime.
+                  {evaluationResult ? 'Runtime execution measured inside secure sandbox.' : 'Run code to measure execution latency against the 2,000 ms limit.'}
                 </p>
               </div>
 
@@ -467,18 +468,18 @@ Ready for compilation. Click "Run Code" above to execute.`}
                   <Cpu size={15} color="var(--info-text)" />
                 </div>
                 <div className="profiling-big-stat">
-                  <span className="stat-val">1.24 MB</span>
+                  <span className="stat-val">{evaluationResult ? `${((testCasesList[0]?.memory_kb || 1200) / 1024).toFixed(2)} MB` : '--'}</span>
                   <span className="stat-sub">vs 256 MB Memory Cap</span>
                 </div>
                 <div className="progress-track" style={{ marginTop: '8px', height: '6px' }}>
                   <div
                     className="progress-fill fill-info"
-                    style={{ width: '1.2%' }}
-                    title="1.2% of 256MB memory quota"
+                    style={{ width: evaluationResult ? `${Math.min(100, Math.max(1, Math.round(((testCasesList[0]?.memory_kb || 1200) / (256 * 1024)) * 100)))}%` : '0%' }}
+                    title="Memory quota"
                   />
                 </div>
                 <p className="profiling-caption">
-                  Clean dynamic memory allocation within normal heap footprint bounds.
+                  {evaluationResult ? 'Clean dynamic memory allocation within sandbox bounds.' : 'Run code to profile dynamic memory footprint against the 256 MB quota.'}
                 </p>
               </div>
 
@@ -489,16 +490,26 @@ Ready for compilation. Click "Run Code" above to execute.`}
                     <Sparkles size={15} color="var(--warning-text)" />
                     <span className="profiling-card-title">AICTE Adaptive Difficulty Classification</span>
                   </div>
-                  <Badge variant="tier-advanced">Tier: Advanced</Badge>
+                  <Badge variant={evaluationResult ? 'tier-advanced' : 'neutral'}>
+                    {evaluationResult ? `Tier: ${evaluationResult.adaptive_tiering?.assigned_tier || evaluationResult.adaptiveTier || 'Proficient'}` : 'Awaiting Run'}
+                  </Badge>
                 </div>
 
                 <div className="tier-recommendation-box">
                   <div className="tier-rec-header">
                     <span className="tier-rec-label">Assigned Status:</span>
-                    <strong className="text-accent">Advanced Invariant Mastery (Level 5)</strong>
+                    <strong className="text-accent">
+                      {evaluationResult ? (evaluationResult.adaptive_tiering?.assigned_tier || 'Proficient') : 'Pending Execution'}
+                    </strong>
                   </div>
                   <p className="tier-rec-body">
-                    Student has demonstrated complete test suite validation, sub-20ms execution times, and proper Inorder traversal formatting. Recommended to advance to self-balancing AVL Trees (rotations LL, RR, LR, RL) for next laboratory submission.
+                    {evaluationResult ? (
+                      evaluationResult.passed_test_cases === evaluationResult.total_test_cases
+                        ? `Student has demonstrated complete test suite validation (${evaluationResult.passed_test_cases}/${evaluationResult.total_test_cases} passed). ${evaluationResult.adaptive_tiering?.recommended_difficulty ? `Recommended next: ${evaluationResult.adaptive_tiering.recommended_difficulty} level practicals.` : ''}`
+                        : `Test suite execution: ${evaluationResult.passed_test_cases} of ${evaluationResult.total_test_cases} passed. Review compiler feedback and test cases to optimize code.`
+                    ) : (
+                      'Click "Run Code" to execute tests and trigger automated AICTE adaptive difficulty classification.'
+                    )}
                   </p>
                 </div>
               </div>

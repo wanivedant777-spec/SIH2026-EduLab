@@ -86,10 +86,10 @@ export default function App() {
           const userObj = {
             id: session.user.id,
             email: session.user.email,
-            identifier: profile?.identifier || session.user.user_metadata?.identifier || 'GHR2025AI001',
+            identifier: profile?.identifier || session.user.user_metadata?.identifier || session.user.email?.split('@')[0] || 'User',
             name: profile?.full_name || session.user.user_metadata?.full_name || 'User',
             role,
-            batchName: profile?.batches?.name || 'C1',
+            batchName: profile?.batches?.name || 'Unassigned',
             status: profile?.status || 'active',
           };
           setCurrentUser(userObj);
@@ -275,7 +275,7 @@ export default function App() {
     };
 
     const payload = {
-      student_id: currentUser?.identifier || 'GHR2025AI001',
+      student_id: currentUser?.id || currentUser?.identifier || 'unassigned',
       practical_id: currentPractical.id,
       language_id: languageMap[language] || 54,
       source_code: code,
@@ -384,17 +384,17 @@ export default function App() {
     try {
       const newSub = await submitStudentPractical({
         studentId: currentUser.id,
-        prn: currentUser.identifier || 'GHR2025AI001',
+        prn: currentUser.identifier || 'Unassigned',
         studentName: currentUser.name || 'Student',
-        rollNumber: currentUser.identifier || 'GHR2025AI001',
+        rollNumber: currentUser.identifier || 'Unassigned',
         practicalId: currentPractical.id,
         practicalTitle: currentPractical.title,
         language,
-        codingMarks: evaluationResult.coding_marks_awarded ?? 3.0,
+        codingMarks: evaluationResult.coding_marks_awarded ?? 0.0,
         passRate: evaluationResult.pass_percentage || 0,
         passedCount: evaluationResult.passed_test_cases || 0,
-        totalCount: evaluationResult.total_test_cases || 3,
-        adaptiveTier: evaluationResult.adaptive_tiering?.assigned_tier || 'Proficient',
+        totalCount: evaluationResult.total_test_cases || currentPractical.testCases?.length || 0,
+        adaptiveTier: evaluationResult.adaptive_tiering?.assigned_tier || 'Beginner',
         timeSpentSeconds: 420,
         focusBlurEvents: focusState.blurEventsCount || 0,
         sourceCode: code,

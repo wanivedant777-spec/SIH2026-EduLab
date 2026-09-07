@@ -8,10 +8,11 @@ export default function GradingModal({
   isOpen,
   onClose,
   submission,
+  currentUser,
   onSaveGrade,
 }) {
-  const [writeupMarks, setWriteupMarks] = useState(submission?.writeupMarks || 4.5);
-  const [vivaMarks, setVivaMarks] = useState(submission?.vivaMarks || 1.5);
+  const [writeupMarks, setWriteupMarks] = useState(submission?.writeupMarks ?? 0.0);
+  const [vivaMarks, setVivaMarks] = useState(submission?.vivaMarks ?? 0.0);
   const [feedback, setFeedback] = useState(submission?.feedback || '');
   const [checklist, setChecklist] = useState({
     aim: true,
@@ -22,7 +23,7 @@ export default function GradingModal({
 
   if (!submission) return null;
 
-  const codingMarks = Math.min(3.0, submission.codingMarks !== undefined ? submission.codingMarks : 3.0);
+  const codingMarks = Math.min(3.0, submission.codingMarks !== undefined ? submission.codingMarks : 0.0);
   const currentTotal = Math.min(10.0, Math.round((parseFloat(codingMarks) + parseFloat(writeupMarks) + parseFloat(vivaMarks)) * 10) / 10);
 
   const handleSave = () => {
@@ -31,7 +32,7 @@ export default function GradingModal({
       writeupMarks,
       vivaMarks,
       feedback,
-      gradedBy: 'Dr. Radhika Sen',
+      gradedBy: currentUser?.name || submission?.gradedBy || 'Faculty Evaluator',
     });
     onClose();
   };
@@ -137,8 +138,8 @@ export default function GradingModal({
           </div>
 
           <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-            Evaluated against test cases: {submission.passedCount || 3}/{submission.totalCount || 3} passed ({submission.passRate || 100}%).
-            Solved in {submission.timeSpentMin || 20} minutes with {submission.focusBlurEvents || 0} window blur interruptions.
+            Evaluated against test cases: {submission.passedCount ?? 0}/{submission.totalCount ?? 0} passed ({submission.passRate ?? 0}%).
+            Solved in {submission.timeSpentMin ?? 0} minutes with {submission.focusBlurEvents || 0} window blur interruptions.
           </p>
 
           <div
@@ -155,7 +156,7 @@ export default function GradingModal({
               whiteSpace: 'pre-wrap',
             }}
           >
-            {submission.sourceCode || '// C++20 Verified solution submitted by student'}
+            {submission.sourceCode || '(No source code recorded in database)'}
           </div>
         </div>
 

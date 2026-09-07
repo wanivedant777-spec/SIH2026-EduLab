@@ -138,7 +138,7 @@ export default function LoginView({ onLoginSuccess }) {
         identifier: profile?.identifier || enteredId,
         name: profile?.full_name || fallbackName,
         role: profile?.role || fallbackRole,
-        batchName: profile?.batches?.name || (enteredId.includes('02') ? 'C2' : 'C1'),
+        batchName: profile?.batches?.name || 'Unassigned',
         status: profile?.status || 'active',
       };
 
@@ -151,7 +151,7 @@ export default function LoginView({ onLoginSuccess }) {
         identifier: enteredId,
         name: fallbackName,
         role: fallbackRole,
-        batchName: 'C1',
+        batchName: 'Unassigned',
         status: 'active',
       });
     }
@@ -246,48 +246,14 @@ export default function LoginView({ onLoginSuccess }) {
                 className="shortcut-chip"
                 onClick={() => handleQuickFill('GHR2025AI001', 'StudentPassword@2026')}
               >
-                🎓 GHR2025AI001 (Student, C1)
+                🎓 GHR2025AI001 (Student)
               </button>
               <button
                 type="button"
                 className="shortcut-chip"
                 onClick={() => handleQuickFill('FAC001', 'FacultyPassword@2026')}
               >
-                👨‍🏫 FAC001 (Faculty, DSA)
-              </button>
-            </div>
-            <div className="shortcuts-list" style={{ marginTop: '8px' }}>
-              <button
-                type="button"
-                className="shortcut-chip"
-                style={{ borderColor: 'rgba(99, 102, 241, 0.4)', background: 'rgba(99, 102, 241, 0.12)' }}
-                onClick={() => onLoginSuccess({
-                  id: 'std_demo_014',
-                  email: 'aarav.sharma@edulab.edu',
-                  identifier: 'PRN2026CS014',
-                  name: 'Aarav Sharma',
-                  role: 'student',
-                  batchName: 'Batch A · C1',
-                  status: 'Active',
-                })}
-              >
-                🚀 Direct Student Portal Demo
-              </button>
-              <button
-                type="button"
-                className="shortcut-chip"
-                style={{ borderColor: 'rgba(99, 102, 241, 0.4)', background: 'rgba(99, 102, 241, 0.12)' }}
-                onClick={() => onLoginSuccess({
-                  id: 'fac_demo_001',
-                  email: 'sunita.deshmukh@edulab.edu',
-                  identifier: 'FAC001',
-                  name: 'Dr. Sunita Deshmukh',
-                  role: 'faculty',
-                  batchName: 'Batch A (DSA)',
-                  status: 'Active',
-                })}
-              >
-                ⚡ Direct Faculty Portal Demo
+                👨‍🏫 FAC001 (Faculty)
               </button>
             </div>
           </div>

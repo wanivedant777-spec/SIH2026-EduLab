@@ -37,6 +37,7 @@ export default function StudentWorkspace({
         />
 
         <Terminal
+          practical={practical}
           evaluationResult={evaluationResult}
           isRunning={isRunning}
           evaluationPhase={evaluationPhase}

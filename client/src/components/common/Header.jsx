@@ -125,18 +125,18 @@ export default function Header({
           ) : (
             <div className="rubric-pill">
               <span className="rubric-segment">
-                Academic Curriculum: <strong>CS204P Data Structures</strong>
+                Curriculum: <strong>CS201P Data Structures &amp; Algorithms</strong>
               </span>
               <span style={{ color: 'var(--border-strong)' }}>•</span>
               <span className="rubric-segment">
-                <strong>75% Completed</strong> (3 of 4)
+                Batch: <strong>{currentUser?.batchName || 'Unassigned'}</strong>
               </span>
             </div>
           )
         ) : (
           <div className="rubric-pill">
             <span className="rubric-segment">
-              Faculty Portal · <strong>Batch A (64 Students)</strong>
+              Faculty Evaluation Portal
             </span>
             <span style={{ color: 'var(--border-strong)' }}>•</span>
             <span className="rubric-segment">
