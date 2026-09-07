@@ -1,6 +1,213 @@
 /* EduLab Nova - Unified Live Data Service (Supabase Canonical Source of Truth) */
 import { supabase } from '../supabaseClient';
 
+// Canonical algorithmic boilerplate templates for practicals with missing or placeholder '...' in database
+const CANONICAL_STARTER_CODES = {
+  1: {
+    cpp: `#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+// Practical 01: Find the Largest Number in an Array
+// Algorithm: Traverse array, maintain running maximum invariant
+int findLargest(const vector<int>& arr) {
+    if (arr.empty()) return 0;
+    int maxVal = arr[0];
+    for (size_t i = 1; i < arr.size(); i++) {
+        if (arr[i] > maxVal) {
+            maxVal = arr[i];
+        }
+    }
+    return maxVal;
+}
+
+int main() {
+    int n;
+    if (cin >> n) {
+        vector<int> arr(n);
+        for (int i = 0; i < n; i++) {
+            cin >> arr[i];
+        }
+        cout << findLargest(arr) << endl;
+    }
+    return 0;
+}`,
+    python: `# Practical 01: Find the Largest Number in an Array
+# Algorithm: Linear scan with optimal O(N) time and O(1) auxiliary space
+import sys
+
+def find_largest(arr):
+    if not arr:
+        return 0
+    max_val = arr[0]
+    for x in arr:
+        if x > max_val:
+            max_val = x
+    return max_val
+
+def main():
+    input_data = sys.stdin.read().split()
+    if not input_data:
+        return
+    n = int(input_data[0])
+    arr = [int(x) for x in input_data[1:n+1]]
+    print(find_largest(arr))
+
+if __name__ == '__main__':
+    main()`,
+    java: `import java.util.Scanner;
+
+// Practical 01: Find the Largest Number in an Array
+public class Main {
+    public static int findLargest(int[] arr) {
+        if (arr.length == 0) return 0;
+        int maxVal = arr[0];
+        for (int num : arr) {
+            if (num > maxVal) {
+                maxVal = num;
+            }
+        }
+        return maxVal;
+    }
+
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        if (sc.hasNextInt()) {
+            int n = sc.nextInt();
+            int[] arr = new int[n];
+            for (int i = 0; i < n; i++) {
+                arr[i] = sc.nextInt();
+            }
+            System.out.println(findLargest(arr));
+        }
+    }
+}`
+  },
+  2: {
+    cpp: `#include <iostream>
+#include <vector>
+#include <string>
+using namespace std;
+
+// Practical 02: Implement Stack Using Array
+class Stack {
+private:
+    vector<int> data;
+public:
+    void push(int val) {
+        data.push_back(val);
+    }
+    void pop() {
+        if (data.empty()) {
+            cout << "Stack Underflow" << endl;
+        } else {
+            cout << data.back() << endl;
+            data.pop_back();
+        }
+    }
+    void peek() {
+        if (data.empty()) {
+            cout << "Stack is Empty" << endl;
+        } else {
+            cout << data.back() << endl;
+        }
+    }
+};
+
+int main() {
+    Stack st;
+    string op;
+    while (cin >> op) {
+        if (op == "PUSH") {
+            int val;
+            cin >> val;
+            st.push(val);
+        } else if (op == "POP") {
+            st.pop();
+        } else if (op == "PEEK") {
+            st.peek();
+        }
+    }
+    return 0;
+}`,
+    python: `# Practical 02: Implement Stack Using Array
+import sys
+
+class Stack:
+    def __init__(self):
+        self.data = []
+
+    def push(self, val):
+        self.data.append(val)
+
+    def pop(self):
+        if not self.data:
+            print("Stack Underflow")
+        else:
+            print(self.data.pop())
+
+    def peek(self):
+        if not self.data:
+            print("Stack is Empty")
+        else:
+            print(self.data[-1])
+
+def main():
+    tokens = sys.stdin.read().split()
+    if not tokens:
+        return
+    st = Stack()
+    i = 0
+    while i < len(tokens):
+        op = tokens[i]
+        if op == "PUSH" and i + 1 < len(tokens):
+            val = int(tokens[i+1])
+            st.push(val)
+            i += 2
+        elif op == "POP":
+            st.pop()
+            i += 1
+        elif op == "PEEK":
+            st.peek()
+            i += 1
+        else:
+            i += 1
+
+if __name__ == '__main__':
+    main()`,
+    java: `import java.util.Scanner;
+import java.util.ArrayList;
+
+// Practical 02: Implement Stack Using Array
+public class Main {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
+        ArrayList<Integer> stack = new ArrayList<>();
+        while (sc.hasNext()) {
+            String op = sc.next();
+            if (op.equals("PUSH")) {
+                int val = sc.nextInt();
+                stack.add(val);
+            } else if (op.equals("POP")) {
+                if (stack.isEmpty()) {
+                    System.out.println("Stack Underflow");
+                } else {
+                    System.out.println(stack.remove(stack.size() - 1));
+                }
+            } else if (op.equals("PEEK")) {
+                if (stack.isEmpty()) {
+                    System.out.println("Stack is Empty");
+                } else {
+                    System.out.println(stack.get(stack.size() - 1));
+                }
+            }
+        }
+    }
+}`
+  }
+};
+
 /**
  * Fetch all practicals from Supabase canonical catalog joined with test cases.
  * Throws explicit error on failure - never falls back silently to fake data.
@@ -39,6 +246,16 @@ export async function getPracticals() {
     const theory = p.theory_content || {};
     const testCases = (p.test_cases || []).sort((a, b) => (b.is_sample ? 1 : 0) - (a.is_sample ? 1 : 0));
 
+    // Resolve canonical starter code if database contains placeholder '...'
+    const dbCodes = p.starter_codes || {};
+    const canonicalFallback = CANONICAL_STARTER_CODES[p.practical_number] || {};
+    const resolvedStarterCodes = {
+      cpp: dbCodes.cpp && dbCodes.cpp !== '...' ? dbCodes.cpp : (canonicalFallback.cpp || dbCodes.cpp || ''),
+      python: dbCodes.python && dbCodes.python !== '...' ? dbCodes.python : (canonicalFallback.python || dbCodes.python || ''),
+      java: dbCodes.java && dbCodes.java !== '...' ? dbCodes.java : (canonicalFallback.java || dbCodes.java || ''),
+      c: dbCodes.c && dbCodes.c !== '...' ? dbCodes.c : (canonicalFallback.cpp || dbCodes.c || ''),
+    };
+
     return {
       id: p.id,
       practicalNumber: p.practical_number,
@@ -54,7 +271,7 @@ export async function getPracticals() {
       pseudocode: theory.pseudocode || '',
       flowchartUrl: p.flowchart_url,
       videoUrl: p.video_url,
-      starterCodes: p.starter_codes || {},
+      starterCodes: resolvedStarterCodes,
       testCases: testCases.map((tc) => ({
         id: tc.id,
         input_data: tc.input_data,
@@ -111,9 +328,9 @@ export async function getSubmissions(studentId = null) {
   }
 
   return data.map((s) => {
-    const ev = s.evaluations?.[0] || {};
-    const profile = s.profiles || {};
-    const practical = s.practicals || {};
+    const ev = Array.isArray(s.evaluations) ? (s.evaluations[0] || {}) : (s.evaluations || {});
+    const profile = Array.isArray(s.profiles) ? (s.profiles[0] || {}) : (s.profiles || {});
+    const practical = Array.isArray(s.practicals) ? (s.practicals[0] || {}) : (s.practicals || {});
 
     const coding = parseFloat(
       ev.marks_performing !== undefined && ev.marks_performing !== null
@@ -160,6 +377,7 @@ export async function getSubmissions(studentId = null) {
       gradedBy: ev.graded_by || null,
       gradedAt: ev.graded_at || null,
       sourceCode: s.source_code,
+      createdAt: s.created_at,
     };
   });
 }
@@ -364,3 +582,50 @@ export function computeBatchMetrics(submissions = []) {
     },
   };
 }
+
+/**
+ * Export 10-Mark Rubric Gradebook as CSV compliant with AICTE/NEP 2020 formats.
+ */
+export function exportGradebookCSV(submissions = [], subjectCode = 'CS201P') {
+  const headers = [
+    'PRN',
+    'Student Name',
+    'Roll Number',
+    'Batch',
+    'Practical',
+    'Coding (3M Auto)',
+    'Writing (5M Faculty)',
+    'Viva (2M Faculty)',
+    'Total (10M)',
+    'Adaptive Difficulty Tier',
+    'Focus Integrity Status',
+    'Status',
+    'Submitted Date'
+  ];
+
+  const rows = submissions.map((s) => [
+    `"${s.prn || 'Unassigned'}"`,
+    `"${s.studentName || 'Student'}"`,
+    `"${s.rollNumber || 'Unassigned'}"`,
+    `"${s.batchName || 'Unassigned'}"`,
+    `"${s.practicalTitle || 'Practical'}"`,
+    (s.codingMarks || 0).toFixed(1),
+    (s.writeupMarks || 0).toFixed(1),
+    (s.vivaMarks || 0).toFixed(1),
+    (s.totalMarks || 0).toFixed(1),
+    `"${s.adaptiveTier || 'Beginner'}"`,
+    (s.focusBlurEvents || 0) > 0 ? `"${s.focusBlurEvents} Blurs (Flagged)"` : '"Verified Clean"',
+    `"${s.status || 'Pending Review'}"`,
+    `"${s.submittedDate || 'N/A'}"`
+  ]);
+
+  const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `EduLab_${subjectCode || 'Console'}_10Mark_Gradebook_${new Date().toISOString().slice(0, 10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+

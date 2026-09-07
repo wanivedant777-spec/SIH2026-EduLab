@@ -19,6 +19,7 @@ import {
   getStudentProfile,
   getFacultyAllocations,
   computeBatchMetrics,
+  exportGradebookCSV,
 } from './services/dataService';
 import { focusTracker } from './services/focusService';
 
@@ -438,6 +439,86 @@ export default function App() {
 
   const batchMetrics = computeBatchMetrics(submissions);
 
+  // Seamless 1-click persona switcher for SIH live judging & evaluation
+  const handleRoleChange = async (targetRole) => {
+    if (!currentUser) return;
+
+    if (currentUser.role === targetRole) {
+      setActiveRole(targetRole);
+      return;
+    }
+
+    const DEMO_PERSONAS = {
+      student: {
+        email: 'student001@college.edu',
+        password: 'StudentPassword@2026',
+        identifier: 'GHR2025AI001',
+        name: 'Student 001',
+        role: 'student',
+        batchName: 'C1',
+      },
+      faculty: {
+        email: 'faculty001@college.edu',
+        password: 'FacultyPassword@2026',
+        identifier: 'FAC001',
+        name: 'Faculty One',
+        role: 'faculty',
+        batchName: 'All Allocated Batches',
+      },
+    };
+
+    const targetCreds = DEMO_PERSONAS[targetRole];
+    if (!targetCreds) {
+      setActiveRole(targetRole);
+      return;
+    }
+
+    addToast(`Authenticating demo session as ${targetCreds.name} (${targetCreds.identifier})...`, 'info');
+    setIsLoadingData(true);
+
+    try {
+      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+        email: targetCreds.email,
+        password: targetCreds.password,
+      });
+
+      if (authErr) {
+        console.warn('Persona switch notice:', authErr.message);
+        setActiveRole(targetRole);
+        return;
+      }
+
+      const authUser = authData.user;
+      const newUser = {
+        id: authUser.id,
+        email: authUser.email,
+        identifier: targetCreds.identifier,
+        name: targetCreds.name,
+        role: targetCreds.role,
+        batchName: targetCreds.batchName,
+        status: 'active',
+      };
+
+      setCurrentUser(newUser);
+      setActiveRole(targetRole);
+      if (targetRole === 'student') {
+        setStudentView('dashboard');
+      }
+      addToast(`Active Persona: ${targetCreds.name} · Loaded real Supabase data`, 'success');
+    } catch (err) {
+      console.error('Failed to switch persona:', err);
+      setActiveRole(targetRole);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const handleExportGradebook = () => {
+    const subjectCode = facultyAllocations[0]?.subjects?.code || 'CS201P';
+    exportGradebookCSV(submissions, subjectCode);
+    addToast('10-Mark Gradebook exported successfully (CSV format).', 'success');
+  };
+
   return (
     <div className="app-root">
       {/* Top Application Bar */}
@@ -445,10 +526,7 @@ export default function App() {
         currentUser={currentUser}
         onLogout={handleLogout}
         activeRole={activeRole}
-        onRoleChange={(role) => {
-          setActiveRole(role);
-          addToast(`Switched view to ${role === 'student' ? 'Student Portal' : 'Faculty Evaluation Portal'}`, 'info');
-        }}
+        onRoleChange={handleRoleChange}
         studentView={studentView}
         onStudentViewChange={(view) => {
           setStudentView(view);
@@ -458,7 +536,7 @@ export default function App() {
         onOpenAuditDrawer={() => setIsAuditDrawerOpen(true)}
         onRunCode={handleRunCode}
         onSubmitPractical={handleSubmitPractical}
-        onExportGradebook={() => addToast('Exporting 10-Mark Gradebook (CSV/NEP 2020 format)...', 'info')}
+        onExportGradebook={handleExportGradebook}
         isRunning={isRunning}
         isSubmitted={isSubmitted}
       />

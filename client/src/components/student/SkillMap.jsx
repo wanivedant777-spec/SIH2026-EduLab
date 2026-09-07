@@ -61,12 +61,28 @@ export default function SkillMap({ skills = [] }) {
         (() => {
           const center = 110;
           const radius = 75;
-          const numAxes = skills.length;
 
-          const radarPoints = skills
+          // Pad with canonical syllabus competencies if fewer than 3 skills assessed
+          const canonicalPads = [
+            { name: 'Linear Data Structures', category: 'Stacks & Queues', level: 0, tier: 'Pending', milestone: 'Next Lab in Syllabus' },
+            { name: 'Algorithmic Invariants', category: 'Complexity Analysis', level: 0, tier: 'Pending', milestone: 'Next Lab in Syllabus' },
+            { name: 'Sorting & Searching', category: 'Algorithms', level: 0, tier: 'Pending', milestone: 'Next Lab in Syllabus' },
+          ];
+
+          const radarSkills = [...skills];
+          for (let i = 0; radarSkills.length < 3 && i < canonicalPads.length; i++) {
+            if (!radarSkills.some((s) => s.name.toLowerCase().includes(canonicalPads[i].name.toLowerCase()))) {
+              radarSkills.push(canonicalPads[i]);
+            }
+          }
+
+          const numAxes = radarSkills.length;
+
+          const radarPoints = radarSkills
             .map((s, idx) => {
               const angle = (idx / numAxes) * Math.PI * 2 - Math.PI / 2;
-              const r = ((s.level || 0) / 100) * radius;
+              // Minimum 5% radius for vertex visibility even if level is 0
+              const r = Math.max(4, ((s.level || 0) / 100) * radius);
               const x = center + Math.cos(angle) * r;
               const y = center + Math.sin(angle) * r;
               return `${x.toFixed(1)},${y.toFixed(1)}`;
@@ -86,7 +102,7 @@ export default function SkillMap({ skills = [] }) {
                   >
                     {/* Concentric Guide Polygons */}
                     {[0.25, 0.5, 0.75, 1.0].map((level, i) => {
-                      const ringPoints = skills
+                      const ringPoints = radarSkills
                         .map((_, idx) => {
                           const angle = (idx / numAxes) * Math.PI * 2 - Math.PI / 2;
                           const r = level * radius;
@@ -107,7 +123,7 @@ export default function SkillMap({ skills = [] }) {
                     })}
 
                     {/* Axis Spoke Lines */}
-                    {skills.map((_, idx) => {
+                    {radarSkills.map((_, idx) => {
                       const angle = (idx / numAxes) * Math.PI * 2 - Math.PI / 2;
                       const x2 = center + Math.cos(angle) * radius;
                       const y2 = center + Math.sin(angle) * radius;
@@ -133,9 +149,9 @@ export default function SkillMap({ skills = [] }) {
                     />
 
                     {/* Radar Data Vertex Dots */}
-                    {skills.map((s, idx) => {
+                    {radarSkills.map((s, idx) => {
                       const angle = (idx / numAxes) * Math.PI * 2 - Math.PI / 2;
-                      const r = ((s.level || 0) / 100) * radius;
+                      const r = Math.max(4, ((s.level || 0) / 100) * radius);
                       const x = center + Math.cos(angle) * r;
                       const y = center + Math.sin(angle) * r;
                       return (
@@ -143,8 +159,8 @@ export default function SkillMap({ skills = [] }) {
                           key={idx}
                           cx={x}
                           cy={y}
-                          r="4"
-                          fill="var(--accent-text)"
+                          r={s.level > 0 ? '4' : '2.5'}
+                          fill={s.level > 0 ? 'var(--accent-text)' : 'var(--text-muted)'}
                           stroke="#101216"
                           strokeWidth="1.5"
                         />

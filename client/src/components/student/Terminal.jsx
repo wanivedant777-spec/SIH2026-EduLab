@@ -252,6 +252,37 @@ export default function Terminal({
               </div>
             )}
 
+            {/* AICTE 10-Mark Rubric Indicator */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: '10px',
+                fontSize: '11.5px',
+                color: 'var(--text-secondary)',
+                flexWrap: 'wrap',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--success)' }} />
+                <span><strong>3.0M Coding</strong> (Automated via Test Suite)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--purple-light)' }} />
+                <span><strong>5.0M Writing</strong> (Faculty Evaluated Journal)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--warning)' }} />
+                <span><strong>2.0M Viva</strong> (Faculty Oral Defense)</span>
+              </div>
+            </div>
+
             {/* Test Cases Accordion List */}
             <div className="test-cases-list">
               {testCasesList.length === 0 ? (

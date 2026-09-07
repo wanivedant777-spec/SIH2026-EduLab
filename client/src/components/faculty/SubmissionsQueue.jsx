@@ -81,8 +81,10 @@ export default function SubmissionsQueue({
       } else if (sortBy === 'integrity') {
         comparison = (a.focusBlurEvents || 0) - (b.focusBlurEvents || 0);
       } else {
-        // default time / id
-        comparison = (a.id || '').localeCompare(b.id || '');
+        // default chronological sorting by real submission timestamp
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        comparison = timeA - timeB;
       }
       return sortOrder === 'asc' ? comparison : -comparison;
     });

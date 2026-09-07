@@ -233,31 +233,31 @@ export default function LoginView({ onLoginSuccess }) {
           </button>
         </form>
 
-        {/* Quick Testing Demo Shortcuts (only visible in development mode) */}
-        {import.meta.env.DEV && (
-          <div className="demo-shortcuts">
-            <div className="shortcuts-label">
-              <Sparkles size={12} />
-              <span>Quick Test Credentials (DEV only):</span>
-            </div>
-            <div className="shortcuts-list">
-              <button
-                type="button"
-                className="shortcut-chip"
-                onClick={() => handleQuickFill('GHR2025AI001', 'StudentPassword@2026')}
-              >
-                🎓 GHR2025AI001 (Student)
-              </button>
-              <button
-                type="button"
-                className="shortcut-chip"
-                onClick={() => handleQuickFill('FAC001', 'FacultyPassword@2026')}
-              >
-                👨‍🏫 FAC001 (Faculty)
-              </button>
-            </div>
+        {/* SIH 2026 Evaluator Demo Shortcuts */}
+        <div className="demo-shortcuts">
+          <div className="shortcuts-label">
+            <Sparkles size={12} />
+            <span>SIH 2026 Evaluator Demo Accounts:</span>
           </div>
-        )}
+          <div className="shortcuts-list">
+            <button
+              type="button"
+              className="shortcut-chip"
+              onClick={() => handleQuickFill('GHR2025AI001', 'StudentPassword@2026')}
+              title="1-Click Fill Student Credentials (Batch C1 · CS201P)"
+            >
+              🎓 GHR2025AI001 (Student)
+            </button>
+            <button
+              type="button"
+              className="shortcut-chip"
+              onClick={() => handleQuickFill('FAC001', 'FacultyPassword@2026')}
+              title="1-Click Fill Faculty Credentials (CS201P Evaluator)"
+            >
+              👨‍🏫 FAC001 (Faculty)
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
