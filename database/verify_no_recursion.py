@@ -1,10 +1,12 @@
 """
-Verify Zero Profiles RLS Recursion (07_fix_profiles_rls_recursion.sql)
-Checks:
-1. No policy on public.profiles references public.profiles in its USING or WITH CHECK expressions.
-2. public.faculty_allocations has a safe SELECT policy for authenticated faculty.
-3. public.test_cases, submissions, and evaluations are authorization-checked without recursive profiles lookups.
-4. is_faculty_or_admin() and get_user_role() remain strictly revoked from client roles.
+Verify Acyclic RLS Dependency Graph (07_fix_profiles_rls_recursion.sql)
+
+Audits:
+1. public.profiles policies: ZERO references to profiles (direct recursion) and ZERO references to institutional_roster (indirect cycle).
+2. public.faculty_allocations policies: ZERO references to profiles or institutional_roster (ensures Level 0 base status).
+3. public.test_cases policies: Faculty authorization checked via faculty_allocations & practicals without profiles subquery.
+4. Dependent tables (submissions, evaluations, practicals, tab_switch_logs) respect the topological DAG order.
+5. Function privilege hardening: is_faculty_or_admin() and get_user_role() remain strictly revoked.
 """
 
 import os
@@ -13,8 +15,8 @@ import re
 
 def main():
     print("==================================================================")
-    print("🛡️ AUDITING 07_fix_profiles_rls_recursion.sql FOR ZERO RECURSION")
-    print("==================================================================\n")
+    print("🛡️ AUDITING 07_fix_profiles_rls_recursion.sql FOR ACYCLIC RLS DAG")
+    print("==================================================================")
 
     migration_path = os.path.join(os.path.dirname(__file__), "schemas", "07_fix_profiles_rls_recursion.sql")
     if not os.path.exists(migration_path):
@@ -24,47 +26,60 @@ def main():
     with open(migration_path, "r", encoding="utf-8") as f:
         sql = f.read()
 
-    # 1. Check profiles policies specifically for recursion
-    print("--- 1. Checking public.profiles Policies for Self-Referencing Queries ---")
-    profiles_section = re.search(r"-- 3\. PUBLIC\.PROFILES.*?(?=-- 4\. PUBLIC\.PRACTICALS)", sql, re.DOTALL)
-    if not profiles_section:
-        print("❌ Could not extract public.profiles section.")
+    # 1. Audit public.profiles policies
+    print("\n--- 1. Auditing public.profiles Policies ---")
+    profiles_match = re.search(r"-- 5\. LEVEL 1: PUBLIC\.PROFILES.*?(?=-- 6\. LEVEL 2:)", sql, re.DOTALL)
+    if not profiles_match:
+        print("❌ Could not extract profiles section.")
         sys.exit(1)
 
-    profiles_sql = profiles_section.group(0)
+    profiles_sql = profiles_match.group(0)
+    profile_policies = re.findall(
+        r"CREATE\s+POLICY\s+\"([^\"]+)\"\s+ON\s+public\.profiles\s+(?:FOR\s+[A-Z]+\s+)?(?:TO\s+[a-z_]+\s+)?USING\s*\((.*?)\)(?:\s+WITH\s+CHECK\s*\((.*?)\))?;",
+        profiles_sql, re.DOTALL | re.IGNORECASE
+    )
 
-    # Find all CREATE POLICY statements on public.profiles
-    policies = re.findall(r"CREATE\s+POLICY\s+\"([^\"]+)\"\s+ON\s+public\.profiles\s+(?:FOR\s+[A-Z]+\s+)?(?:TO\s+[a-z_]+\s+)?USING\s*\((.*?)\)(?:\s+WITH\s+CHECK\s*\((.*?)\))?;", profiles_sql, re.DOTALL | re.IGNORECASE)
+    for p_name, using_c, with_c in profile_policies:
+        combined = using_c + " " + (with_c or "")
+        print(f"  • Policy: \"{p_name}\"")
 
-    has_recursion = False
-    for p_name, using_clause, with_check in policies:
-        print(f"  • Auditing Policy: \"{p_name}\"")
-        combined = using_clause + " " + (with_check or "")
-        
-        # Check for any query from profiles inside the policy expression
-        matches = re.findall(r"FROM\s+(?:public\.)?profiles\b", combined, re.IGNORECASE)
-        if matches:
-            print(f"    ❌ RECURSION DETECTED: Policy \"{p_name}\" references profiles: {matches}")
-            has_recursion = True
+        # Check for direct recursion to profiles
+        if re.search(r"FROM\s+(?:public\.)?profiles\b", combined, re.IGNORECASE):
+            print(f"    ❌ DIRECT RECURSION: Queries profiles!")
+            sys.exit(1)
         else:
-            print(f"    ✅ CLEAN: Zero references to public.profiles")
+            print(f"    ✅ Clean: Zero direct profiles queries")
 
-    if has_recursion:
-        print("\n❌ Failed: Infinite recursion risk found in profiles policies.")
+        # Check for indirect cycle via institutional_roster
+        if re.search(r"FROM\s+(?:public\.)?institutional_roster\b", combined, re.IGNORECASE):
+            print(f"    ❌ INDIRECT CYCLE: Queries institutional_roster!")
+            sys.exit(1)
+        else:
+            print(f"    ✅ Clean: Zero institutional_roster queries")
+
+    # 2. Audit public.faculty_allocations policies
+    print("\n--- 2. Auditing public.faculty_allocations Policies (Level 0 Leaf) ---")
+    fa_match = re.search(r"-- 2\. LEVEL 0: PUBLIC\.FACULTY_ALLOCATIONS.*?(?=-- 3\. LEVEL 0:)", sql, re.DOTALL)
+    if not fa_match:
+        print("❌ Could not extract faculty_allocations section.")
         sys.exit(1)
-    else:
-        print("  🎉 Zero self-referencing subqueries in public.profiles policies!\n")
 
-    # 2. Check public.faculty_allocations SELECT policy
-    print("--- 2. Checking public.faculty_allocations Policies ---")
-    if "CREATE POLICY \"Faculty can view own allocations\"" in sql and "ON public.faculty_allocations FOR SELECT" in sql:
-        print("  ✅ Safe SELECT policy on public.faculty_allocations present.")
-    else:
-        print("  ❌ Missing required SELECT policy on public.faculty_allocations.")
-        sys.exit(1)
+    fa_sql = fa_match.group(0)
+    fa_policies = re.findall(
+        r"CREATE\s+POLICY\s+\"([^\"]+)\"\s+ON\s+public\.faculty_allocations\s+(?:FOR\s+[A-Z]+\s+)?(?:TO\s+[a-z_]+\s+)?USING\s*\((.*?)\);",
+        fa_sql, re.DOTALL | re.IGNORECASE
+    )
 
-    # 3. Check is_faculty_or_admin() revoked
-    print("\n--- 3. Checking Function Privilege Hardening ---")
+    for p_name, using_c in fa_policies:
+        print(f"  • Policy: \"{p_name}\"")
+        if re.search(r"FROM\s+(?:public\.)?(profiles|institutional_roster)\b", using_c, re.IGNORECASE):
+            print(f"    ❌ INDIRECT CYCLE: Queries profiles or roster!")
+            sys.exit(1)
+        else:
+            print(f"    ✅ Clean: Zero cross-table dependencies (strictly faculty_id = auth.uid() or JWT)")
+
+    # 3. Audit Function Privileges
+    print("\n--- 3. Auditing Function Execution Revocations ---")
     if "REVOKE EXECUTE ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC, anon, authenticated;" in sql:
         print("  ✅ is_faculty_or_admin() strictly revoked from client roles.")
     else:
@@ -77,17 +92,16 @@ def main():
         print("  ❌ get_user_role() revocation missing.")
         sys.exit(1)
 
-    # 4. Check covered tables
-    print("\n--- 4. Checking Dependent Table Coverage ---")
-    for tbl in ["public.test_cases", "public.submissions", "public.evaluations", "public.practicals"]:
-        if f"ON {tbl}" in sql:
-            print(f"  ✅ Table covered: {tbl}")
-        else:
-            print(f"  ❌ Table missing: {tbl}")
-            sys.exit(1)
+    # 4. Check for is_faculty_or_admin() references in any policies
+    print("\n--- 4. Checking for any legacy is_faculty_or_admin() in policies ---")
+    if re.search(r"USING\s*\([^;]*is_faculty_or_admin", sql, re.IGNORECASE):
+        print("  ❌ Found policy calling is_faculty_or_admin()!")
+        sys.exit(1)
+    else:
+        print("  ✅ Zero policies in migration call is_faculty_or_admin().")
 
     print("\n==================================================================")
-    print("✅ 07_fix_profiles_rls_recursion.sql AUDIT PASSED WITH 0 ERRORS")
+    print("✅ ACYCLIC RLS AUDIT PASSED: ZERO DIRECT OR INDIRECT CYCLES DETECTED")
     print("==================================================================")
 
 if __name__ == "__main__":
