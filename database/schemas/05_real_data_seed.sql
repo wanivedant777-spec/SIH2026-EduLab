@@ -7,9 +7,10 @@
 -- ------------------------------------------------------------------------------
 -- 1. RLS HOTFIX: RESTORE EXECUTION & SECURE POLICIES
 -- ------------------------------------------------------------------------------
--- 1.1 Grant EXECUTE on essential helper functions to authenticated role
-GRANT EXECUTE ON FUNCTION public.is_faculty_or_admin() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_user_role() TO authenticated;
+-- 1.1 Maintain strict revocation on helper functions (direct RLS role checks used instead)
+REVOKE ALL ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.is_faculty_or_admin() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.get_user_role() FROM PUBLIC, anon;
 
 -- 1.2 Profiles Policies (Avoid recursion, allow authenticated self-read & faculty batch inspection)
 DROP POLICY IF EXISTS "Profiles viewable by self, faculty, and admins" ON public.profiles;
