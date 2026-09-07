@@ -33,18 +33,7 @@ export default function CodeEditor({
           <select
             value={language}
             onChange={(e) => onLanguageChange(e.target.value)}
-            style={{
-              background: 'var(--bg-surface)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-medium)',
-              padding: '4px 10px',
-              borderRadius: 'var(--radius-xs)',
-              fontSize: '12px',
-              fontFamily: 'var(--font-sans)',
-              fontWeight: 500,
-              cursor: 'pointer',
-              outline: 'none',
-            }}
+            className="editor-lang-select"
           >
             <option value="cpp">C++20 (GCC 14 · Judge0 ID 54)</option>
             <option value="c">C (GCC 14 · Judge0 ID 50)</option>
@@ -53,18 +42,15 @@ export default function CodeEditor({
           </select>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '11px',
-              color: isAutoSaving ? 'var(--cyan-light)' : 'var(--text-muted)',
-            }}
+            className="editor-autosave-indicator"
+            title={isAutoSaving ? 'Auto-saving changes...' : 'Continuous Auto-save Active'}
           >
             <ShieldCheck size={14} color="var(--success)" />
-            <span>{isAutoSaving ? 'Auto-saving changes...' : 'Continuous Auto-save Active'}</span>
+            <span className="editor-autosave-text">
+              {isAutoSaving ? 'Auto-saving...' : 'Continuous Auto-save'}
+            </span>
           </div>
 
           <Button
@@ -74,7 +60,7 @@ export default function CodeEditor({
             onClick={onResetCode}
             title="Reset code editor to starter template"
           >
-            Reset
+            <span className="btn-text-full">Reset</span>
           </Button>
         </div>
       </div>

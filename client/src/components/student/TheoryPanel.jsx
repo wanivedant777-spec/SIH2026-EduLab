@@ -8,7 +8,33 @@ export default function TheoryPanel({ practical }) {
   const [activeTab, setActiveTab] = useState('algorithm');
   const [copied, setCopied] = useState(false);
 
-  if (!practical) return null;
+  if (!practical) {
+    return (
+      <div className="theory-pane" style={{ alignItems: 'center', justifyContent: 'center', padding: '32px 20px', textAlign: 'center' }}>
+        <div style={{ maxWidth: '280px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          <div style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--primary-light)'
+          }}>
+            <BookOpen size={20} />
+          </div>
+          <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+            No Practical Selected
+          </h3>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
+            Select a practical from the curriculum catalog or dashboard to view its theory, algorithm, and viva guidelines.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const tabs = [
     { id: 'algorithm', label: 'Algorithm', icon: BookOpen },

@@ -160,7 +160,14 @@ export default function Header({
                 loading={isRunning}
                 disabled={isRunning}
               >
-                {isRunning ? 'Compiling...' : 'Run Code'}
+                {isRunning ? (
+                  'Compiling...'
+                ) : (
+                  <>
+                    <span className="btn-text-full">Run Code</span>
+                    <span className="btn-text-compact">Run</span>
+                  </>
+                )}
               </Button>
 
               <Button
@@ -169,7 +176,14 @@ export default function Header({
                 onClick={onSubmitPractical}
                 disabled={isRunning || isSubmitted}
               >
-                {isSubmitted ? 'Submitted (3.0M)' : 'Submit Practical'}
+                {isSubmitted ? (
+                  'Submitted (3.0M)'
+                ) : (
+                  <>
+                    <span className="btn-text-full">Submit Practical</span>
+                    <span className="btn-text-compact">Submit</span>
+                  </>
+                )}
               </Button>
             </>
           ) : (
@@ -177,9 +191,11 @@ export default function Header({
               variant="primary"
               size="sm"
               icon={Play}
+              className="header-action-resume"
               onClick={() => onStudentViewChange && onStudentViewChange('workspace')}
             >
-              Continue Practical
+              <span className="btn-text-full">Continue Practical</span>
+              <span className="btn-text-compact">Resume</span>
               <ArrowRight size={13} style={{ marginLeft: '4px' }} />
             </Button>
           )
@@ -190,7 +206,8 @@ export default function Header({
             onClick={onExportGradebook}
             size="sm"
           >
-            Export Gradebook
+            <span className="btn-text-full">Export Gradebook</span>
+            <span className="btn-text-compact">Export</span>
           </Button>
         )}
 
@@ -202,7 +219,7 @@ export default function Header({
             size="sm"
             title="Sign out of current account"
           >
-            Logout
+            <span className="btn-text-full">Logout</span>
           </Button>
         )}
       </div>

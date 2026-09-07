@@ -327,6 +327,30 @@ export default function Hero3DObject({ practical, onInteract }) {
     stateRef.current.isDragging = false;
   };
 
+  const handleTouchStart = (e) => {
+    if (e.touches && e.touches.length === 1) {
+      stateRef.current.isDragging = true;
+      stateRef.current.lastMouseX = e.touches[0].clientX;
+      stateRef.current.lastMouseY = e.touches[0].clientY;
+      if (onInteract) onInteract();
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!stateRef.current.isDragging || !e.touches || e.touches.length !== 1) return;
+    const deltaX = e.touches[0].clientX - stateRef.current.lastMouseX;
+    const deltaY = e.touches[0].clientY - stateRef.current.lastMouseY;
+    stateRef.current.targetAngleY += deltaX * 0.008;
+    stateRef.current.targetAngleX -= deltaY * 0.008;
+    stateRef.current.targetAngleX = Math.max(-0.6, Math.min(0.8, stateRef.current.targetAngleX));
+    stateRef.current.lastMouseX = e.touches[0].clientX;
+    stateRef.current.lastMouseY = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = () => {
+    stateRef.current.isDragging = false;
+  };
+
   const resetPerspective = (e) => {
     e.stopPropagation();
     stateRef.current.targetAngleX = 0.25;
@@ -345,7 +369,11 @@ export default function Hero3DObject({ practical, onInteract }) {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      title="Interactive 3D Data Structure · Click & Drag to Orbit"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{ touchAction: 'none' }}
+      title="Interactive 3D Data Structure · Touch or Drag to Orbit"
     >
       {/* 3D Canvas */}
       <canvas ref={canvasRef} className="hero-3d-canvas" />

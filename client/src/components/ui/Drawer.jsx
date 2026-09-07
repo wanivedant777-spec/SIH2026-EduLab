@@ -22,20 +22,10 @@ export default function Drawer({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
+        className="app-drawer-panel"
         style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          bottom: 0,
           width,
           maxWidth: '100vw',
-          background: 'var(--bg-panel)',
-          borderLeft: '1px solid var(--border-strong)',
-          boxShadow: 'var(--shadow-lg), 0 0 32px rgba(0,0,0,0.8)',
-          display: 'flex',
-          flexDirection: 'column',
-          zIndex: 1001,
-          animation: 'drawer-slide 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
         onClick={(e) => e.stopPropagation()}
       >

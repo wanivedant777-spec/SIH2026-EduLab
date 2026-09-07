@@ -366,6 +366,19 @@
   gap: 8px;
 }
 
+.modal-checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 540px) {
+  .modal-checklist-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ==========================================================================
    Toasts (Linear Style Bottom Notification)
    ========================================================================== */
@@ -1299,22 +1312,161 @@
   line-height: 1.45;
 }
 
-/* Responsive adjustments */
+/* ==========================================================================
+   Comprehensive Component Responsive System
+   ========================================================================== */
+
 @media (max-width: 1100px) {
   .hero-content-grid {
     grid-template-columns: 1fr;
+    gap: 28px;
   }
   .dashboard-two-col-grid {
     grid-template-columns: 1fr;
+    gap: 20px;
   }
   .performance-grid {
     grid-template-columns: 1fr;
+    gap: 20px;
   }
   .practicals-grid {
     grid-template-columns: 1fr;
   }
   .hero-metrics-strip {
     grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 18px 14px 48px;
+    gap: 20px;
+  }
+  .student-hero-banner {
+    padding: 22px 18px;
+  }
+  .hero-title {
+    font-size: 22px;
+    line-height: 1.25;
+  }
+  .hero-description {
+    font-size: 12.5px;
+    margin-bottom: 16px;
+  }
+  .hero-3d-wrapper {
+    height: 300px;
+  }
+  .continue-practical-card {
+    padding: 14px 16px;
+  }
+  .continue-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .continue-card-action {
+    width: 100%;
+  }
+  .continue-card-action button {
+    width: 100%;
+    justify-content: center;
+  }
+  .performance-telemetry-cards {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .section-title {
+    font-size: 15px;
+  }
+
+  /* Modal Responsive Scaling */
+  .modal-overlay {
+    padding: 12px;
+  }
+  .modal-container {
+    max-height: 94vh;
+    border-radius: var(--radius-md);
+  }
+  .modal-header {
+    padding: 12px 14px;
+  }
+  .modal-body {
+    padding: 14px;
+  }
+  .modal-footer {
+    padding: 10px 14px;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-container {
+    padding: 14px 10px 36px;
+    gap: 16px;
+  }
+  .student-hero-banner {
+    padding: 16px 14px;
+    border-radius: var(--radius-md);
+  }
+  .hero-title {
+    font-size: 19px;
+  }
+  .hero-3d-wrapper {
+    height: 250px;
+  }
+  .hero-metrics-strip {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .hero-metric-box {
+    padding: 10px 12px;
+  }
+  .metric-box-val {
+    font-size: 18px;
+  }
+  .continue-card-meta-row {
+    gap: 10px;
+    font-size: 11px;
+  }
+
+  /* Login card on ultra-compact mobile */
+  .login-container {
+    padding: 14px 10px;
+  }
+  .login-card {
+    padding: 22px 16px;
+  }
+  .login-title {
+    font-size: 18px;
+  }
+}
+
+/* ==========================================================================
+   Drawer Responsive System
+   ========================================================================== */
+.app-drawer-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg), 0 0 32px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  z-index: 1001;
+  animation: drawer-slide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 520px) {
+  .app-drawer-panel {
+    width: 100vw !important;
+    border-left: none;
   }
 }
 

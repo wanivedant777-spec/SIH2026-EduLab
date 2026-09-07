@@ -45,7 +45,7 @@ export default function GradingModal({
       icon={Award}
       maxWidth="780px"
       footer={
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+        <div className="grading-modal-footer-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Final Score:</span>
             <span
@@ -60,7 +60,7 @@ export default function GradingModal({
             </span>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <Button variant="secondary" onClick={onClose} size="sm">
               Cancel
             </Button>
@@ -195,7 +195,7 @@ export default function GradingModal({
           </div>
 
           {/* Checklist */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginTop: '10px' }}>
+          <div className="modal-checklist-grid">
             {[
               { key: 'aim', label: 'Aim & Theoretical Prerequisites' },
               { key: 'algorithm', label: 'Step-by-step Algorithm' },

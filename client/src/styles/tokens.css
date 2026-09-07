@@ -77,4 +77,18 @@
   /* Transitions */
   --transition-fast: 0.12s cubic-bezier(0.2, 0, 0, 1);
   --transition-normal: 0.2s cubic-bezier(0.2, 0, 0, 1);
+
+  /* Responsive Viewport Breakpoints */
+  --bp-mobile: 480px;
+  --bp-phablet: 640px;
+  --bp-tablet: 768px;
+  --bp-laptop: 1024px;
+  --bp-desktop: 1280px;
+  --bp-wide: 1440px;
+
+  /* Safe Area Insets for Mobile / Notch Devices */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }

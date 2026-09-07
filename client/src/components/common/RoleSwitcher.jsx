@@ -38,7 +38,7 @@ export default function RoleSwitcher({ currentRole, onRoleChange }) {
         title="Switch to Student Lab Workspace view"
       >
         <User size={12} />
-        <span>Student</span>
+        <span className="role-switcher-label">Student</span>
       </button>
 
       <button
@@ -63,7 +63,7 @@ export default function RoleSwitcher({ currentRole, onRoleChange }) {
         title="Switch to Faculty Evaluation & Batch Dashboard view"
       >
         <GraduationCap size={13} />
-        <span>Faculty</span>
+        <span className="role-switcher-label">Faculty</span>
       </button>
     </div>
   );
