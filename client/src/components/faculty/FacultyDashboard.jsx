@@ -112,7 +112,17 @@ export default function FacultyDashboard({ currentUser, facultyAllocations = [],
           <div className="faculty-empty-context"><BookOpen size={28} /><h3>Select a subject and batch</h3><p>Only your allocated subjects and batches can be managed from this workspace.</p></div>
         )}
 
-        <GradingModal isOpen={isGradingOpen} onClose={() => setIsGradingOpen(false)} submission={selectedSubmission} onSave={onSaveGrade} />
+        <GradingModal
+          isOpen={isGradingOpen}
+          onClose={() => setIsGradingOpen(false)}
+          submission={selectedSubmission}
+          currentUser={currentUser}
+          onSaveGrade={async (gradeData) => {
+            if (!selectedSubmission) return;
+            await onSaveGrade(selectedSubmission.id, gradeData);
+            setIsGradingOpen(false);
+          }}
+        />
       </div>
     </div>
   );
