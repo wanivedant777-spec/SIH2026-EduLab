@@ -352,7 +352,9 @@ export async function getSubmissions(studentId = null) {
       studentName: profile.full_name || 'Student',
       rollNumber: profile.identifier || 'Unassigned',
       batchName: profile.batches?.name || 'Unassigned',
+      batchId: profile.batch_id || null,
       practicalId: s.practical_id,
+      subjectId: practical.subject_id || null,
       practicalTitle: practical.title
         ? practical.title.startsWith('Practical')
           ? practical.title
