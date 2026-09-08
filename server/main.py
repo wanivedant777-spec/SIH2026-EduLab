@@ -363,6 +363,15 @@ def execute_via_judge0(payload: Dict[str, Any]) -> Dict[str, Any]:
         resp = requests.post(url, json=payload, headers=headers, timeout=5)
         if resp.status_code in (200, 201):
             data = resp.json()
+            # If Judge0 encounters internal sandbox failures (e.g. status 13 / box failure under Rosetta emulation)
+            status_id = data.get("status", {}).get("id")
+            if status_id == 13 or (data.get("message") and "No such file or directory" in data.get("message", "")):
+                logger.warning("Judge0 internal sandbox error (%s). Falling back to safe local execution.", data.get("message"))
+                return execute_locally(
+                    language_id=payload.get("language_id", 71),
+                    source_code=payload.get("source_code", ""),
+                    stdin=payload.get("stdin", "")
+                )
             data["is_simulated"] = False
             return data
         logger.warning("Judge0 returned status %d: %s", resp.status_code, resp.text[:200])
@@ -416,6 +425,13 @@ def health_check():
             judge0_reachable = True
             data = resp.json()
             judge0_version = data.get("version")
+            if not judge0_version:
+                try:
+                    resp_v = requests.get(f"{JUDGE0_API_URL.rstrip('/')}/version", headers=headers, timeout=1)
+                    if resp_v.status_code == 200:
+                        judge0_version = resp_v.text.strip()
+                except Exception:
+                    pass
         else:
             resp_v = requests.get(f"{JUDGE0_API_URL.rstrip('/')}/version", headers=headers, timeout=2)
             if resp_v.status_code == 200:
