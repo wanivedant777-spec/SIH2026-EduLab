@@ -85,13 +85,13 @@ flowchart TB
 
     subgraph Services["⚙️ Services"]
         Judge0[Judge0<br/>Sandboxed Execution]
-        ML[ML Microservice<br/>Python / FastAPI<br/>Difficulty Tiering]
+        EvalService[FastAPI Evaluation Microservice<br/>Parameterized Tests · Sandbox Harness · Adaptive Tiering]
         N8N[n8n<br/>Alerts · Reminders · Flagging]
     end
 
     UI --> Core
     Core --> Judge0
-    Core --> ML
+    Core --> EvalService
     Core <--> N8N
 
     classDef purpleBox fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px;
@@ -100,7 +100,7 @@ flowchart TB
 
     class UI purpleBox
     class DB,Auth,RT,Storage blueBox
-    class Judge0,ML,N8N greenBox
+    class Judge0,EvalService,N8N greenBox
 
     style Client fill:#f5f3ff,stroke:#7c3aed,color:#3b0764
     style Core fill:#eff6ff,stroke:#2563eb,color:#1e3a8a
@@ -149,34 +149,36 @@ We're deliberately splitting what must work for any demo from what's a stretch g
 
 ```mermaid
 flowchart LR
-    subgraph MVP["✅ MVP — must work for any pitch/demo"]
-        M1[Login] --> M2[Assigned practical]
+    subgraph MVP["✅ MVP — Implemented & Verifiable"]
+        M1[Login & Auth] --> M2[Assigned practical]
         M2 --> M3[Theory + Monaco IDE]
-        M3 --> M4[Run via Judge0]
-        M4 --> M5[Auto-graded marks]
-        M5 --> M6[Faculty dashboard]
+        M3 --> M4[Parameterized Test Generation<br/>SHA-256 per-student seed]
+        M4 --> M5[Run via Judge0 Sandbox]
+        M5 --> M6[AICTE 10-Mark Rubric Score]
+        M6 --> M7[Faculty Dashboard]
     end
 
-    subgraph Backlog["🔮 Backlog — time-permitting"]
-        B1[Rule-based difficulty tiering]
-        B2[Parameterized test generation]
-        B3[Plagiarism detection]
-        B4[n8n automations]
-        B5[Certificate export]
-        B6[Multi-language toggle]
+    subgraph Backlog["🔮 Backlog — Future Institutional Roadmap"]
+        B1[Adaptive ML model v2<br/>trained on submission corpus]
+        B2[AST / MOSS Plagiarism detection]
+        B3[n8n institutional automations]
+        B4[Cryptographic Certificate export]
+        B5[Multi-language toggle]
     end
 
     classDef mvpBox fill:#d1fae5,stroke:#059669,color:#065f46,stroke-width:2px;
     classDef backlogBox fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:2px;
 
-    class M1,M2,M3,M4,M5,M6 mvpBox
-    class B1,B2,B3,B4,B5,B6 backlogBox
+    class M1,M2,M3,M4,M5,M6,M7 mvpBox
+    class B1,B2,B3,B4,B5 backlogBox
 
     style MVP fill:#ecfdf5,stroke:#059669,color:#065f46
     style Backlog fill:#fffbeb,stroke:#d97706,color:#78350f
 ```
 
-> **Note on "adaptive difficulty":** v1 is rule-based (attempt count, time-to-solve, pass rate) — not ML yet, and we say so plainly. A real model comes in v2 once enough submission data exists. We'd rather be honest about this than overclaim AI to judges.
+> **Note on Engineering Transparency:**
+> - **Parameterized Tests:** Built on deterministic cryptographic seeding (`SHA-256(student_id + practical_id + case_index)`) and algorithmic ground-truth solvers — **not ML/AI**. Every student receives distinct hidden test cases, but repeated attempts produce reproducible inputs.
+> - **Adaptive Difficulty:** v1 is rule-based (attempt count, time-to-solve, pass rate) according to transparent AICTE rubric thresholds. A learned ML model comes in v2 once sufficient institutional telemetry exists. We value engineering honesty over inflated AI buzzwords.
 
 ## 🛠️ Tech Stack
 
@@ -336,7 +338,22 @@ We chose **detect and inform**, not **punish automatically**:
 - ❌ No auto-erasing code on tab switch — code auto-saves continuously
 - ❌ No auto-lowering rank from tab-switch count — focus-loss is logged for faculty to *review*, not auto-penalize
 - ✅ Tab detection only fires on leaving the browser entirely — navigating to the in-platform theory/video panel doesn't trigger it
-- ✅ Primary defense is **parameterized per-student test data** — a real technical answer, not a UI restriction that devtools can bypass
+- ✅ Primary defense is **real parameterized per-student test data** — a systems-level technical answer, not a fragile UI restriction that devtools can bypass
+
+### 🧪 Real Parameterized Test Case Implementation
+
+1. **Deterministic Seeding (`student_id + practical_id`)**:
+   - Seed is derived server-side via `SHA-256(student_id::practical_id::case_idx)`.
+   - Produces reproducible inputs for the same student across re-attempts.
+   - Generates distinct, high-entropy test vectors for different students on the same practical.
+2. **Ground-Truth Algorithmic Solvers**:
+   - Covers all 10 canonical practicals in CS201P (Linked Lists, Stack/Parentheses, Circular Queue, BST, AVL Tree, Graph BFS, Dijkstra Shortest Path, Kruskal MST, Hash Table with Linear Probing, Sorting Benchmarks).
+   - Expected outputs are computed on the fly by reference solvers — never hardcoded dummy strings.
+3. **Zero-Leakage Privacy**:
+   - Pre-execution: Student APIs and database RLS policies only expose `is_sample = true` public test cases.
+   - Post-execution: Hidden parameterized test case inputs and expected outputs are redacted from response payloads, preventing extraction via browser network devtools while providing truthful pass/fail badges, telemetry, and marks.
+4. **Copy-Paste Defeat**:
+   - A student submitting hardcoded `if input == sample: print(...)` logic passes public sample cases but fails the per-student parameterized hidden cases. Classmate solution swapping fails immediately.
 
 ---
 

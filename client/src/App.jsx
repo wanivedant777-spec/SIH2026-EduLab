@@ -278,6 +278,7 @@ export default function App() {
     const payload = {
       student_id: currentUser?.id || currentUser?.identifier || 'unassigned',
       practical_id: currentPractical.id,
+      practical_number: currentPractical.practicalNumber,
       language_id: languageMap[language] || 54,
       source_code: code,
       attempt_count: 1,

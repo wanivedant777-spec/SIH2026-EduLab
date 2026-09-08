@@ -11,7 +11,15 @@ import shutil
 import subprocess
 import tempfile
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
+import random
+
+from parameterized_tests import (
+    generate_parameterized_test_cases,
+    resolve_practical_number,
+    GENERATOR_MAP,
+    generate_p10_sorting_benchmark,
+)
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status, Header, Depends
@@ -63,15 +71,18 @@ JUDGE0_API_HOST = os.getenv("JUDGE0_API_HOST", "")
 # ---------------------------------------------------------------------------
 
 class TestCase(BaseModel):
+    __test__ = False
     input_data: str = Field(..., description="Standard input passed to the program")
     expected_output: str = Field(..., description="Expected output from stdout")
     is_sample: bool = Field(default=False, description="Whether testcase is visible sample or hidden")
+    is_parameterized: bool = Field(default=False, description="Whether testcase is dynamically generated per student")
 
 
 class EvaluationRequest(BaseModel):
-    student_id: str = Field(..., example="std_2026_014")
-    practical_id: str = Field(..., example="prac_dsa_04_bst")
-    language_id: int = Field(..., example=54, description="Judge0 language ID: 54=C++, 71=Python, 62=Java, 50=C")
+    student_id: str = Field(..., description="Student ID or institutional identifier")
+    practical_id: str = Field(..., description="Practical ID or code")
+    practical_number: Optional[int] = Field(default=None, description="Optional canonical practical number (1-10)")
+    language_id: int = Field(..., description="Judge0 language ID: 54=C++, 71=Python, 62=Java, 50=C")
     source_code: str = Field(..., description="Student code submission")
     test_cases: List[TestCase] = Field(default_factory=list)
     attempt_count: int = Field(default=1, ge=1, description="Current submission attempt number")
@@ -81,6 +92,7 @@ class EvaluationRequest(BaseModel):
 class TestCaseResult(BaseModel):
     test_case_index: int
     is_sample: bool
+    is_parameterized: bool = False
     status: str
     passed: bool
     stdout: Optional[str] = None
@@ -442,7 +454,7 @@ def health_check():
 
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "judge0": {
             "status": "reachable" if judge0_reachable else "unreachable",
             "url": JUDGE0_API_URL,
@@ -527,29 +539,75 @@ def evaluate_submission(
             detail="Source code cannot be empty.",
         )
 
-    # Fallback sample test cases if none supplied
-    test_cases = payload.test_cases
-    if not test_cases:
-        test_cases = [
-            TestCase(input_data="4\n10 5 20 15", expected_output="5 10 15 20", is_sample=True),
-            TestCase(input_data="5\n30 20 40 10 25", expected_output="10 20 25 30 40", is_sample=False),
-            TestCase(input_data="1\n42", expected_output="42", is_sample=False),
-        ]
+    # 1. Resolve canonical sample test cases
+    sample_cases = [tc for tc in payload.test_cases if tc.is_sample]
+    if not sample_cases and payload.test_cases:
+        # If no cases explicitly tagged is_sample, preserve existing passed cases
+        sample_cases = payload.test_cases
+
+    p_num = resolve_practical_number(payload.practical_id, payload.practical_number)
+
+    # If absolutely no test cases supplied by client, generate canonical sample
+    if not sample_cases:
+        sample_rng = random.Random(42 + p_num)
+        gen_func = GENERATOR_MAP.get(p_num, generate_p10_sorting_benchmark)
+        s_in, s_out = gen_func(sample_rng, is_edge_case=False)
+        sample_cases = [TestCase(input_data=s_in, expected_output=s_out, is_sample=True, is_parameterized=False)]
+
+    # 2. Generate deterministic per-student hidden parameterized test cases
+    param_hidden_cases = generate_parameterized_test_cases(
+        student_id=payload.student_id,
+        practical_id=payload.practical_id,
+        practical_number=p_num,
+        count=2,
+    )
+
+    # 3. Assemble execution suite: sample cases followed by hidden parameterized cases
+    all_eval_cases: List[TestCase] = []
+    for sc in sample_cases:
+        all_eval_cases.append(
+            TestCase(
+                input_data=sc.input_data,
+                expected_output=sc.expected_output,
+                is_sample=True,
+                is_parameterized=False,
+            )
+        )
+    for ph in param_hidden_cases:
+        all_eval_cases.append(
+            TestCase(
+                input_data=ph.input_data,
+                expected_output=ph.expected_output,
+                is_sample=False,
+                is_parameterized=True,
+            )
+        )
 
     judge0_payloads = []
     test_results: List[TestCaseResult] = []
     passed_count = 0
 
-    for idx, tc in enumerate(test_cases, start=1):
+    for idx, tc in enumerate(all_eval_cases, start=1):
+        # Real payload submitted to Judge0
         j0_payload = structure_judge0_payload(
             language_id=payload.language_id,
             source_code=payload.source_code,
             stdin=tc.input_data,
             expected_output=tc.expected_output,
         )
-        judge0_payloads.append(j0_payload)
 
-        # Execute or simulate
+        # For student response transparency without leaking hidden test vectors:
+        if tc.is_parameterized:
+            sanitized_payload = {
+                **j0_payload,
+                "stdin": "[HIDDEN PARAMETERIZED TEST INPUT REDACTED]",
+                "expected_output": "[HIDDEN PARAMETERIZED EXPECTED OUTPUT REDACTED]",
+            }
+            judge0_payloads.append(sanitized_payload)
+        else:
+            judge0_payloads.append(j0_payload)
+
+        # Execute real payload via Judge0 (or local truthful fallback)
         res = execute_via_judge0(j0_payload)
         actual_output = (res.get("stdout") or "").strip()
         expected = tc.expected_output.strip()
@@ -570,22 +628,31 @@ def evaluate_submission(
         if is_passed:
             passed_count += 1
 
+        # Redact raw input/expected output for hidden cases in student-facing response
+        if tc.is_parameterized:
+            disp_expected = "[HIDDEN PARAMETERIZED TEST CASE - REDACTED FOR INTEGRITY]"
+            disp_stdout = "[MATCH VERIFIED]" if is_passed else "[OUTPUT REDACTED FOR INTEGRITY]"
+        else:
+            disp_expected = expected
+            disp_stdout = actual_output
+
         test_results.append(
             TestCaseResult(
                 test_case_index=idx,
                 is_sample=tc.is_sample,
+                is_parameterized=tc.is_parameterized,
                 status=status_desc,
                 passed=is_passed,
-                stdout=actual_output,
+                stdout=disp_stdout,
                 stderr=res.get("stderr"),
-                expected_output=expected,
+                expected_output=disp_expected,
                 execution_time_sec=float(res.get("time") or 0.02),
                 memory_kb=int(res.get("memory") or 1240),
                 is_simulation=is_simulated,
             )
         )
 
-    total_count = len(test_cases)
+    total_count = len(all_eval_cases)
     pass_rate = passed_count / total_count if total_count > 0 else 0.0
 
     # Official SIH 10-mark distribution: Performing (Coding) Component = 3.0 Marks
@@ -619,9 +686,34 @@ def evaluate_submission(
         test_case_results=test_results,
         judge0_payloads=judge0_payloads,
         adaptive_tiering=tier_result,
-        evaluated_at=datetime.utcnow().isoformat(),
+        evaluated_at=datetime.now(timezone.utc).isoformat(),
         is_simulation=has_simulations,
     )
+
+
+@app.get("/api/practicals/{practical_id}/sample-cases", tags=["Curriculum"])
+def get_sample_test_cases(practical_id: str):
+    """
+    Public student-facing endpoint returning only visible sample test cases.
+    Parameterized hidden test cases are never returned by this endpoint.
+    """
+    p_num = resolve_practical_number(practical_id)
+    sample_rng = random.Random(42 + p_num)
+    gen_func = GENERATOR_MAP.get(p_num, generate_p10_sorting_benchmark)
+    s_in, s_out = gen_func(sample_rng, is_edge_case=False)
+    return {
+        "practical_id": practical_id,
+        "practical_number": p_num,
+        "sample_cases": [
+            {
+                "input_data": s_in,
+                "expected_output": s_out,
+                "is_sample": True,
+                "is_parameterized": False,
+            }
+        ],
+        "parameterized_cases_hidden": True,
+    }
 
 
 @app.post("/api/tiering", response_model=AdaptiveTierResult, tags=["Adaptive Learning"])

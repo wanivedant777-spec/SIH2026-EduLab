@@ -40,6 +40,7 @@ export default function Terminal({
   const testCasesList = evaluationResult?.test_case_results || (practical?.testCases || []).map((tc, idx) => ({
     test_case_index: idx + 1,
     is_sample: tc.is_sample ?? (idx === 0),
+    is_parameterized: tc.is_parameterized || false,
     passed: null,
     status: 'Not Run',
     input: tc.input_data || '',
@@ -326,7 +327,7 @@ export default function Terminal({
                           <span className="tc-title-text">
                             Test Case #{tc.test_case_index}{' '}
                             <span className="tc-type-tag">
-                              {tc.is_sample ? '(Sample Public Input)' : '(Curriculum Test Case)'}
+                              {tc.is_parameterized ? '(Parameterized Hidden Test)' : tc.is_sample ? '(Sample Public Input)' : '(Curriculum Test Case)'}
                             </span>
                           </span>
                         </div>
