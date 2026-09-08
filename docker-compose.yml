@@ -1,0 +1,134 @@
+networks:
+  edulabs-net:
+    driver: bridge
+
+volumes:
+  judge0-db-data:
+  judge0-redis-data:
+
+services:
+  # ============================================================================
+  # 1. Judge0 PostgreSQL Database
+  # ============================================================================
+  judge0-db:
+    image: postgres:13.0-alpine
+    container_name: edulabs-judge0-db
+    restart: always
+    environment:
+      POSTGRES_DB: judge0
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: Judge0PostgresPass2026
+    volumes:
+      - judge0-db-data:/var/lib/postgresql/data/
+    networks:
+      - edulabs-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0 -d judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+      start_period: 5s
+
+  # ============================================================================
+  # 2. Judge0 Redis Cache & Queue
+  # ============================================================================
+  judge0-redis:
+    image: redis:6.0-alpine
+    container_name: edulabs-judge0-redis
+    restart: always
+    command: ["sh", "-c", "docker-entrypoint.sh --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: Judge0RedisPass2026
+    volumes:
+      - judge0-redis-data:/data
+    networks:
+      - edulabs-net
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a Judge0RedisPass2026 ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+      start_period: 5s
+
+  # ============================================================================
+  # 3. Judge0 CE Server (API)
+  # ============================================================================
+  judge0-server:
+    image: judge0/judge0:1.13.0
+    container_name: edulabs-judge0-server
+    restart: always
+    privileged: true
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+    ports:
+      - "2358:2358"
+    networks:
+      - edulabs-net
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:2358/system_info || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ============================================================================
+  # 4. Judge0 Workers (Queue Consumer)
+  # ============================================================================
+  judge0-workers:
+    image: judge0/judge0:1.13.0
+    container_name: edulabs-judge0-workers
+    restart: always
+    privileged: true
+    command: ["./scripts/workers"]
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+    networks:
+      - edulabs-net
+    depends_on:
+      judge0-server:
+        condition: service_healthy
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+
+  # ============================================================================
+  # 5. FastAPI Evaluation Microservice
+  # ============================================================================
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: edulabs-fastapi-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - JUDGE0_API_URL=http://judge0-server:2358
+      - JUDGE0_API_KEY=
+      - JUDGE0_API_HOST=
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      - ENABLE_DEMO_LOGIN=${ENABLE_DEMO_LOGIN:-true}
+      - DEMO_STUDENT_EMAIL=${DEMO_STUDENT_EMAIL:-student001@college.edu}
+      - DEMO_STUDENT_PASSWORD=${DEMO_STUDENT_PASSWORD:-StudentPassword@2026}
+      - DEMO_FACULTY_EMAIL=${DEMO_FACULTY_EMAIL:-faculty001@college.edu}
+      - DEMO_FACULTY_PASSWORD=${DEMO_FACULTY_PASSWORD:-FacultyPassword@2026}
+    env_file:
+      - path: .env
+        required: false
+      - path: ./server/.env
+        required: false
+    networks:
+      - edulabs-net
+    depends_on:
+      judge0-server:
+        condition: service_healthy

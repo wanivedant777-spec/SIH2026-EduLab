@@ -196,6 +196,78 @@ Chosen to match the team's existing skills — no time burned learning new infra
 
 **🔐 Privacy:** every query is scoped through Supabase Row Level Security — students see only their own data, faculty see only their assigned batches.
 
+---
+
+## 🚀 Quickstart: Running the Platform
+
+### Prerequisites
+- [Docker & Docker Compose](https://docs.docker.com/get-docker/) (v2.0+)
+- [Node.js](https://nodejs.org/) (v18+)
+
+### 1. One-Command Sandbox Stack (Recommended)
+Run Judge0 CE (server, workers, postgres, redis) and the FastAPI backend together in Docker:
+
+```bash
+# 1. Copy example environment file
+cp .env.docker.example .env
+
+# 2. Edit .env with your Supabase credentials
+# SUPABASE_URL=https://your-project.supabase.co
+# SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# 3. Launch the container stack in detached mode
+docker compose up -d
+```
+
+### 2. Verify Stack Health
+Wait a few seconds for the Judge0 server healthcheck to pass, then verify both services:
+
+```bash
+# Check container status and health
+docker compose ps
+
+# Verify FastAPI and Judge0 connectivity
+curl http://localhost:8000/health
+```
+
+Expected response:
+```json
+{
+  "status": "healthy",
+  "judge0": {
+    "status": "reachable",
+    "url": "http://judge0-server:2358",
+    "version": "1.13.0",
+    "execution_mode": "judge0_sandbox"
+  }
+}
+```
+
+### 3. Start the Frontend (Local)
+The Vite client runs locally outside Docker:
+
+```bash
+cd client
+npm install
+npm run dev
+```
+Open **http://localhost:5173** in your browser.
+
+---
+
+### 🌐 Alternative Setup: Cloud RapidAPI Fallback
+If running on a machine without Docker:
+1. Set up a [RapidAPI Judge0 CE account](https://rapidapi.com/hermanzdosilovic/api/judge0-ce).
+2. In `server/.env`:
+   ```ini
+   JUDGE0_API_URL=https://judge0-ce.p.rapidapi.com
+   JUDGE0_API_KEY=your-rapidapi-key
+   JUDGE0_API_HOST=judge0-ce.p.rapidapi.com
+   ```
+3. Run FastAPI locally: `cd server && pip install -r requirements.txt && python main.py`
+
+---
+
 ## 📝 Marks Distribution
 
 Matches the college's existing 10-mark practical structure — this isn't a hypothetical grading model, it's grounded in a real requirement.

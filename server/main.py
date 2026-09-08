@@ -398,9 +398,41 @@ def root_info():
 
 @app.get("/health", tags=["System"])
 def health_check():
+    """
+    Health check endpoint reporting microservice status, uptime timestamp,
+    and active Judge0 code execution engine reachability.
+    """
+    judge0_reachable = False
+    judge0_version = None
+    try:
+        headers = {}
+        if JUDGE0_API_KEY:
+            headers["X-RapidAPI-Key"] = JUDGE0_API_KEY
+            if JUDGE0_API_HOST:
+                headers["X-RapidAPI-Host"] = JUDGE0_API_HOST
+
+        resp = requests.get(f"{JUDGE0_API_URL.rstrip('/')}/system_info", headers=headers, timeout=2)
+        if resp.status_code == 200:
+            judge0_reachable = True
+            data = resp.json()
+            judge0_version = data.get("version")
+        else:
+            resp_v = requests.get(f"{JUDGE0_API_URL.rstrip('/')}/version", headers=headers, timeout=2)
+            if resp_v.status_code == 200:
+                judge0_reachable = True
+                judge0_version = resp_v.text.strip()
+    except Exception:
+        judge0_reachable = False
+
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
+        "judge0": {
+            "status": "reachable" if judge0_reachable else "unreachable",
+            "url": JUDGE0_API_URL,
+            "version": judge0_version,
+            "execution_mode": "judge0_sandbox" if judge0_reachable else "local_fallback"
+        }
     }
 
 
@@ -761,7 +793,7 @@ def demo_login(req: DemoLoginRequest):
         )
 
     supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
-    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
     if not supabase_url or not service_key:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -806,9 +838,10 @@ def demo_login(req: DemoLoginRequest):
         raise HTTPException(status_code=500, detail="Demo authentication service error.")
 
     user_id = session_data.get("user", {}).get("id")
+    user_token = session_data.get("access_token", service_key)
     admin_headers = {
         "apikey": service_key,
-        "Authorization": f"Bearer {service_key}",
+        "Authorization": f"Bearer {user_token}",
         "Content-Type": "application/json"
     }
 

@@ -28,22 +28,41 @@ export default function LoginView({ onLoginSuccess }) {
         return;
       }
     } catch (err) {
-      console.warn('Demo login endpoint unreachable, activating offline demo preview:', err.message);
+      console.warn('Demo login endpoint unreachable, attempting direct client Supabase demo auth:', err.message);
+      try {
+        const demoEmail = role === 'faculty' ? 'faculty001@college.edu' : 'student001@college.edu';
+        const demoPass = role === 'faculty' ? 'FacultyPassword@2026' : 'StudentPassword@2026';
+        const cleanId = role === 'faculty' ? 'FAC001' : 'GHR2025AI001';
+        const fallbackName = role === 'faculty' ? 'Faculty One' : 'Student 001';
+
+        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+          email: demoEmail,
+          password: demoPass,
+        });
+
+        if (!authErr && authData?.user) {
+          await fetchProfileAndProceed(authData.user, cleanId, role, fallbackName);
+          return;
+        }
+      } catch (clientAuthErr) {
+        console.warn('Client-side Supabase demo auth failed:', clientAuthErr);
+      }
+
       const fallbackProfile = role === 'faculty' ? {
-        id: 'demo-faculty-01',
-        email: 'faculty@edulab.internal',
-        identifier: 'FAC2026',
-        name: 'Dr. Evelyn Reed',
+        id: '267914ae-fc60-4a1a-b900-364e6e0fae24',
+        email: 'faculty001@college.edu',
+        identifier: 'FAC001',
+        name: 'Faculty One',
         role: 'faculty',
-        batchName: 'Faculty Division',
+        batchName: 'C1',
         status: 'active',
       } : {
-        id: 'demo-student-01',
-        email: 'student@edulab.internal',
-        identifier: '23CS042',
-        name: 'Alex Rivera',
+        id: 'a6264b6f-1567-488d-aa70-82a25c66abaa',
+        email: 'student001@college.edu',
+        identifier: 'GHR2025AI001',
+        name: 'Student 001',
         role: 'student',
-        batchName: 'CS-2024-A',
+        batchName: 'C1',
         status: 'active',
       };
       onLoginSuccess(fallbackProfile);
