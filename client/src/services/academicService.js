@@ -3,14 +3,6 @@ import { supabase } from '../supabaseClient';
 export async function getSubjectsForStudent(userId) {
   if (!userId) return [];
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('batch_id, departments(subjects(id, code, name))')
-    .eq('id', userId)
-    .single();
-
-  if (profileError) throw new Error('Failed to load academic subjects: ' + profileError.message);
-
   const { data: practicalSubjects, error } = await supabase
     .from('practicals')
     .select('subject_id, subjects(id, code, name)')
