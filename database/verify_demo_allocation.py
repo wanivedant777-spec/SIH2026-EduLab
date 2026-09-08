@@ -80,8 +80,11 @@ def main():
     # 5. Live Supabase Canonical Entity Probing
     print("\n--- 5. Live Supabase Canonical Entity Verification ---")
     client_env = load_env(os.path.join(os.path.dirname(__file__), "..", "client", ".env"))
+    server_env = load_env(os.path.join(os.path.dirname(__file__), "..", "server", ".env"))
     url = client_env.get("VITE_SUPABASE_URL", "").rstrip("/")
     anon = client_env.get("VITE_SUPABASE_ANON_KEY", "")
+    demo_fac_pwd = server_env.get("DEMO_FACULTY_PASSWORD") or os.getenv("DEMO_FACULTY_PASSWORD", "")
+    demo_std_pwd = server_env.get("DEMO_STUDENT_PASSWORD") or os.getenv("DEMO_STUDENT_PASSWORD", "")
 
     if not url or not anon:
         print("  ⚠️ Supabase environment variables missing in client/.env")
@@ -90,7 +93,7 @@ def main():
     # Authenticate Faculty to probe entity visibility
     fac_login = requests.post(
         f"{url}/auth/v1/token?grant_type=password",
-        json={"email": "faculty001@college.edu", "password": "FacultyPassword@2026"},
+        json={"email": "faculty001@college.edu", "password": demo_fac_pwd},
         headers={"apikey": anon, "Content-Type": "application/json"},
         timeout=10
     )
@@ -134,7 +137,7 @@ def main():
     # Verify Student GHR2025AI001 is in batch C1
     std_login = requests.post(
         f"{url}/auth/v1/token?grant_type=password",
-        json={"email": "student001@college.edu", "password": "StudentPassword@2026"},
+        json={"email": "student001@college.edu", "password": demo_std_pwd},
         headers={"apikey": anon, "Content-Type": "application/json"},
         timeout=10
     )

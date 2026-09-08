@@ -50,9 +50,10 @@ def main():
 
     # 1. Sign up via Supabase Auth API
     signup_url = f"{supabase_url.rstrip('/')}/auth/v1/signup"
+    student_pwd = server_env.get("DEMO_STUDENT_PASSWORD") or os.getenv("DEMO_STUDENT_PASSWORD", "")
     payload = {
         "email": "student001@college.edu",
-        "password": "StudentPassword@2026",
+        "password": student_pwd,
     }
     signup_res = requests.post(signup_url, json=payload, headers={"apikey": anon_key, "Content-Type": "application/json"}, timeout=10)
     print("Auth Signup HTTP Status:", signup_res.status_code)

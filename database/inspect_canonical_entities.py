@@ -14,8 +14,11 @@ def load_env(path):
     return env
 
 client_env = load_env("client/.env")
+server_env = load_env("server/.env")
 url = client_env.get("VITE_SUPABASE_URL", "").rstrip("/")
 anon = client_env.get("VITE_SUPABASE_ANON_KEY", "")
+demo_fac_pwd = server_env.get("DEMO_FACULTY_PASSWORD") or os.getenv("DEMO_FACULTY_PASSWORD", "")
+demo_std_pwd = server_env.get("DEMO_STUDENT_PASSWORD") or os.getenv("DEMO_STUDENT_PASSWORD", "")
 
 headers = {"apikey": anon}
 
@@ -37,7 +40,7 @@ res_prac = requests.get(f"{url}/rest/v1/practicals?select=id,title,subject_id,pr
 # Check Faculty Login
 res_fac = requests.post(f"{url}/auth/v1/token?grant_type=password", json={
     "email": "faculty001@college.edu",
-    "password": "FacultyPassword@2026"
+    "password": demo_fac_pwd
 }, headers={"apikey": anon, "Content-Type": "application/json"})
 
 if res_fac.status_code == 200:
@@ -96,7 +99,7 @@ if res_fac.status_code == 200:
 # Check student account
 res_std = requests.post(f"{url}/auth/v1/token?grant_type=password", json={
     "email": "student001@college.edu",
-    "password": "StudentPassword@2026"
+    "password": demo_std_pwd
 }, headers={"apikey": anon, "Content-Type": "application/json"})
 
 if res_std.status_code == 200:

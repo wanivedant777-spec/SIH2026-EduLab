@@ -820,17 +820,22 @@ def demo_login(req: DemoLoginRequest):
     demo_credentials = {
         "student": {
             "email": os.getenv("DEMO_STUDENT_EMAIL", "student001@college.edu"),
-            "password": os.getenv("DEMO_STUDENT_PASSWORD", "StudentPassword@2026"),
+            "password": os.getenv("DEMO_STUDENT_PASSWORD", ""),
             "identifier": "GHR2025AI001",
         },
         "faculty": {
             "email": os.getenv("DEMO_FACULTY_EMAIL", "faculty001@college.edu"),
-            "password": os.getenv("DEMO_FACULTY_PASSWORD", "FacultyPassword@2026"),
+            "password": os.getenv("DEMO_FACULTY_PASSWORD", ""),
             "identifier": "FAC001",
         }
     }
 
     creds = demo_credentials[target_role]
+    if not creds["password"]:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Demo credentials for {target_role} are not configured in environment."
+        )
     token_url = f"{supabase_url}/auth/v1/token?grant_type=password"
 
     try:
