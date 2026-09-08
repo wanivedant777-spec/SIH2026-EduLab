@@ -7,6 +7,8 @@ import PracticalsList from './PracticalsList';
 import PerformanceAnalytics from './PerformanceAnalytics';
 import SkillMap from './SkillMap';
 import RecentActivity from './RecentActivity';
+import StudentProfileCard from './StudentProfileCard';
+import SubjectSelector from './SubjectSelector';
 
 export default function StudentDashboard({
   currentUser,
@@ -19,6 +21,8 @@ export default function StudentDashboard({
   onRetry,
   onContinuePractical,
   onSelectPractical,
+  subjects = [],
+  onSelectSubject,
 }) {
   const rollNumber = studentProfile?.identifier || currentUser?.identifier || 'Not Assigned';
   const batchName = studentProfile?.batches?.name || currentUser?.batchName || 'Unassigned';
@@ -111,6 +115,10 @@ export default function StudentDashboard({
   return (
     <div className="student-dashboard-page">
       <div className="dashboard-container">
+        <StudentProfileCard profile={studentProfile} currentUser={currentUser} />
+
+        <SubjectSelector subjects={subjects} onSelect={(subject) => onSelectSubject && onSelectSubject(subject)} />
+
         {/* Error state banner if Supabase fails */}
         {error && (
           <div className="db-error-banner" style={{
