@@ -106,7 +106,7 @@ export default function FacultyDashboard({ currentUser, facultyAllocations = [],
               <div className="faculty-metric-card"><CheckCircle2 size={18} /><span>Graded</span><strong>{scopedSubmissions.filter((s) => s.status === 'Graded').length}</strong></div>
             </section>
 
-            <SubmissionsQueue submissions={scopedSubmissions} onGrade={openGrading} />
+            <SubmissionsQueue submissions={scopedSubmissions} onOpenGrading={openGrading} />
           </>
         ) : (
           <div className="faculty-empty-context"><BookOpen size={28} /><h3>Select a subject and batch</h3><p>Only your allocated subjects and batches can be managed from this workspace.</p></div>
