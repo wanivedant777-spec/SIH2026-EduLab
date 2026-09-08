@@ -694,10 +694,8 @@ def institutional_login(req: AuthLoginRequest):
     if isinstance(roster_entry.get("batches"), dict):
         batch_name = roster_entry["batches"].get("name", "C1")
 
-    # 2. Attempt Supabase Auth sign-in
+    # 2. Authenticate the pre-provisioned institutional account.
     token_url = f"{supabase_url}/auth/v1/token?grant_type=password"
-    session_data = None
-
     try:
         login_res = requests.post(
             token_url,
@@ -705,49 +703,17 @@ def institutional_login(req: AuthLoginRequest):
             json={"email": email, "password": req.password},
             timeout=10
         )
-        if login_res.status_code == 200:
-            session_data = login_res.json()
-        else:
-            # First-time sign in: auto-provision confirmed account via Admin API without email limits
-            admin_create_url = f"{supabase_url}/auth/v1/admin/users"
-            admin_res = requests.post(
-                admin_create_url,
-                headers=admin_headers,
-                json={
-                    "email": email,
-                    "password": req.password,
-                    "email_confirm": True,
-                    "user_metadata": {
-                        "full_name": full_name,
-                        "identifier": clean_id
-                    },
-                    "app_metadata": {
-                        "role": role
-                    }
-                },
-                timeout=10
-            )
-            if admin_res.status_code in (200, 201):
-                # Account successfully provisioned, now login
-                retry_login = requests.post(
-                    token_url,
-                    headers={"apikey": service_key, "Content-Type": "application/json"},
-                    json={"email": email, "password": req.password},
-                    timeout=10
-                )
-                if retry_login.status_code == 200:
-                    session_data = retry_login.json()
-            else:
-                # If account exists but password was wrong
-                raise HTTPException(
-                    status_code=401,
-                    detail="Invalid password for this institutional account. Please check your credentials."
-                )
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error("Authentication service error: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Authentication service encountered an error. Please try again later.")
+        raise HTTPException(status_code=503, detail="Authentication service is unavailable. Please try again later.")
+
+    if login_res.status_code != 200:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Institutional ID or password."
+        )
+
+    session_data = login_res.json()
 
     user_id = session_data.get("user", {}).get("id") if session_data else None
 
