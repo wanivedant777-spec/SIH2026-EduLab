@@ -4,15 +4,15 @@ import StudentDashboard from './components/student/StudentDashboard';
 import StudentWorkspace from './components/student/StudentWorkspace';
 import PracticalModal from './components/student/PracticalModal';
 import FacultyDashboard from './components/faculty/FacultyDashboard';
+import CreateAssignmentModal from './components/faculty/CreateAssignmentModal';
 import AuditLogDrawer from './components/faculty/AuditLogDrawer';
 import Toast from './components/ui/Toast';
 import Modal from './components/ui/Modal';
 import Button from './components/ui/Button';
 import LoginView from './components/LoginView';
 import { supabase } from './supabaseClient';
-import { evaluateSubmission, loginDemoAccount } from './services/api';
+import { evaluateSubmission } from './services/api';
 import {
-  getPracticals,
   getSubmissions,
   submitStudentPractical,
   gradeSubmission,
@@ -21,28 +21,27 @@ import {
   computeBatchMetrics,
   exportGradebookCSV,
 } from './services/dataService';
+import { getSubjectsForStudent, getPracticalsBySubject, createAssignment } from './services/academicService';
 import { focusTracker } from './services/focusService';
 
 export default function App() {
-  // Session & User Authentication State
   const [currentUser, setCurrentUser] = useState(null);
   const [studentProfile, setStudentProfile] = useState(null);
   const [facultyAllocations, setFacultyAllocations] = useState([]);
-
-  // Navigation & Role State
-  const [activeRole, setActiveRole] = useState('student'); // 'student' | 'faculty'
-  const [studentView, setStudentView] = useState('dashboard'); // 'dashboard' | 'workspace'
+  const [studentSubjects, setStudentSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [studentView, setStudentView] = useState('dashboard');
   const [practicals, setPracticals] = useState([]);
   const [currentPractical, setCurrentPractical] = useState(null);
   const [isPracticalModalOpen, setIsPracticalModalOpen] = useState(false);
   const [isAuditDrawerOpen, setIsAuditDrawerOpen] = useState(false);
   const [isResetConfirmModalOpen, setIsResetConfirmModalOpen] = useState(false);
+  const [assignmentContext, setAssignmentContext] = useState(null);
 
-  // Student Workspace & Evaluation State
   const [language, setLanguage] = useState('cpp');
   const [code, setCode] = useState('');
   const [isRunning, setIsRunning] = useState(false);
-  const [evaluationPhase, setEvaluationPhase] = useState('idle'); // 'idle' | 'compiling' | 'executing' | 'testing' | 'tiering' | 'completed' | 'failed'
+  const [evaluationPhase, setEvaluationPhase] = useState('idle');
   const [evaluationProgress, setEvaluationProgress] = useState(0);
   const [activeTestIndex, setActiveTestIndex] = useState(-1);
   const [liveLogs, setLiveLogs] = useState([]);
@@ -51,473 +50,266 @@ export default function App() {
   const [stdoutMessage, setStdoutMessage] = useState('');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
 
-  // Data Loading & Sync States
   const [submissions, setSubmissions] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [dataError, setDataError] = useState(null);
-
-  // Toast System
   const [toasts, setToasts] = useState([]);
 
   const addToast = useCallback((message, type = 'info') => {
-    const id = `toast_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
+    setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 4500);
   }, []);
 
-  const dismissToast = (id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  const dismissToast = (id) => setToasts((prev) => prev.filter((toast) => toast.id !== id));
 
-  // Check existing session on mount
+  const buildUserFromSession = useCallback(async (session) => {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*, batches(name)')
+      .eq('id', session.user.id)
+      .single();
+
+    if (error || !profile) throw new Error('Your institutional profile could not be loaded.');
+
+    return {
+      id: session.user.id,
+      email: session.user.email,
+      identifier: profile.identifier,
+      name: profile.full_name,
+      role: profile.role,
+      batchName: profile.batches?.name || 'Unassigned',
+      status: profile.status,
+    };
+  }, []);
+
   useEffect(() => {
-    const checkSession = async () => {
+    const restoreSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*, batches(name)')
-            .eq('id', session.user.id)
-            .single();
-
-          const role = profile?.role || session.user.app_metadata?.role || 'student';
-          const userObj = {
-            id: session.user.id,
-            email: session.user.email,
-            identifier: profile?.identifier || session.user.app_metadata?.identifier || session.user.email?.split('@')[0] || 'User',
-            name: profile?.full_name || session.user.user_metadata?.full_name || 'User',
-            role,
-            batchName: profile?.batches?.name || 'Unassigned',
-            status: profile?.status || 'active',
-          };
-          setCurrentUser(userObj);
-          setActiveRole(role === 'faculty' ? 'faculty' : 'student');
-        }
-      } catch (err) {
-        console.warn('Session check note:', err);
+        if (session?.user) setCurrentUser(await buildUserFromSession(session));
+      } catch (error) {
+        console.warn('Session restore failed:', error.message);
       }
     };
 
-    checkSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, _session) => {
+    restoreSession();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setStudentProfile(null);
         setFacultyAllocations([]);
-        setActiveRole('student');
-        setStudentView('dashboard');
+        setStudentSubjects([]);
+        setSelectedSubject(null);
         setPracticals([]);
+        setCurrentPractical(null);
         setSubmissions([]);
+      }
+      if (event === 'SIGNED_IN' && session?.user) {
+        try { setCurrentUser(await buildUserFromSession(session)); } catch (_) {}
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [buildUserFromSession]);
 
-  // Fetch real data from Supabase for authenticated user
   const loadData = useCallback(async () => {
     if (!currentUser) return;
-
     setIsLoadingData(true);
     setDataError(null);
 
     try {
-      // 1. Fetch practicals
-      const prs = await getPracticals();
-      setPracticals(prs);
-
-      if (prs.length > 0) {
-        setCurrentPractical((prev) => {
-          if (!prev) return prs[0];
-          const matched = prs.find((p) => p.id === prev.id);
-          return matched || prs[0];
-        });
-      }
-
-      // 2. Role-specific queries
       if (currentUser.role === 'student') {
-        // Fetch student profile hierarchy
-        try {
-          const prof = await getStudentProfile(currentUser.id);
-          if (prof) setStudentProfile(prof);
-        } catch (e) {
-          console.warn('Student profile query notice:', e.message);
-        }
-
-        // Fetch student's own submissions
-        const subs = await getSubmissions(currentUser.id);
-        setSubmissions(subs);
+        const [profile, subjects, ownSubmissions] = await Promise.all([
+          getStudentProfile(currentUser.id),
+          getSubjectsForStudent(currentUser.id),
+          getSubmissions(currentUser.id),
+        ]);
+        setStudentProfile(profile);
+        setStudentSubjects(subjects);
+        setSubmissions(ownSubmissions);
       } else if (currentUser.role === 'faculty') {
-        // Fetch faculty allocations
-        try {
-          const allocs = await getFacultyAllocations(currentUser.id);
-          setFacultyAllocations(allocs);
-        } catch (e) {
-          console.warn('Faculty allocations query notice:', e.message);
-        }
-
-        // Fetch all authorized batch submissions
-        const subs = await getSubmissions();
-        setSubmissions(subs);
+        const [allocations, authorizedSubmissions] = await Promise.all([
+          getFacultyAllocations(currentUser.id),
+          getSubmissions(),
+        ]);
+        setFacultyAllocations(allocations);
+        setSubmissions(authorizedSubmissions);
+        const subjectIds = [...new Set(allocations.map((a) => a.subject_id))];
+        const groups = await Promise.all(subjectIds.map((id) => getPracticalsBySubject(id)));
+        setPracticals(groups.flat());
       }
-    } catch (err) {
-      console.error('Data loading failure:', err);
-      setDataError(err.message || 'Failed to sync with live Supabase database.');
-      addToast(`Database sync note: ${err.message}`, 'danger');
+    } catch (error) {
+      setDataError(error.message || 'Failed to synchronize with the database.');
     } finally {
       setIsLoadingData(false);
     }
-  }, [currentUser, addToast]);
+  }, [currentUser]);
 
   useEffect(() => {
-    if (currentUser) {
-      const timer = setTimeout(() => {
-        loadData();
-      }, 0);
-      return () => clearTimeout(timer);
-    }
+    if (currentUser) loadData();
   }, [currentUser, loadData]);
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
-    if (user?.role) {
-      setActiveRole(user.role);
-    }
     setStudentView('dashboard');
-    addToast(`Welcome, ${user.name || user.identifier || 'User'}! Authenticated via Supabase.`, 'success');
+    addToast('Signed in successfully.', 'success');
   };
 
   const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      console.warn('Sign out note:', e);
-    }
-    setCurrentUser(null);
-    setStudentProfile(null);
-    setFacultyAllocations([]);
-    setActiveRole('student');
-    setStudentView('dashboard');
-    setPracticals([]);
-    setSubmissions([]);
-    addToast('Signed out successfully.', 'info');
+    await supabase.auth.signOut();
   };
 
-  // Update starter code when active practical changes
-  const handleSelectPractical = (selected) => {
-    setCurrentPractical(selected);
-    const template = selected.starterCodes?.[language] || selected.starterCodes?.cpp || '';
-    setCode(template);
+  const handleSelectSubject = async (subject) => {
+    try {
+      setIsLoadingData(true);
+      const subjectPracticals = await getPracticalsBySubject(subject.id);
+      setSelectedSubject(subject);
+      setPracticals(subjectPracticals);
+      setCurrentPractical(subjectPracticals[0] || null);
+      setStudentView('dashboard');
+    } catch (error) {
+      addToast(error.message, 'danger');
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const handleSelectPractical = (practical) => {
+    setCurrentPractical(practical);
+    setCode(practical.starterCodes?.[language] || practical.starterCodes?.cpp || '');
     setEvaluationResult(null);
     setEvaluationPhase('idle');
     setEvaluationProgress(0);
     setActiveTestIndex(-1);
     setIsSubmitted(false);
     setStdoutMessage('');
-    addToast(`Loaded ${selected.title?.split(':')[0] || 'Practical'} into workspace`, 'info');
   };
 
-  // Language switch
-  const handleLanguageChange = (newLang) => {
-    setLanguage(newLang);
-    const template = currentPractical?.starterCodes?.[newLang] || currentPractical?.starterCodes?.cpp || '';
-    setCode(template);
-    addToast(`Switched compiler to ${newLang.toUpperCase()}`, 'info');
+  const handleLanguageChange = (nextLanguage) => {
+    setLanguage(nextLanguage);
+    setCode(currentPractical?.starterCodes?.[nextLanguage] || currentPractical?.starterCodes?.cpp || '');
   };
 
-  // Reset editor modal trigger
-  const handleResetCode = () => {
-    setIsResetConfirmModalOpen(true);
-  };
-
-  const handleConfirmReset = () => {
-    const template = currentPractical?.starterCodes?.[language] || currentPractical?.starterCodes?.cpp || '';
-    setCode(template);
-    setIsResetConfirmModalOpen(false);
-    addToast('Editor reset to default starter template', 'info');
-  };
-
-  // Code change with subtle auto-save simulation
-  const handleCodeChange = (newCode) => {
-    setCode(newCode);
+  const handleCodeChange = (nextCode) => {
+    setCode(nextCode);
     setIsAutoSaving(true);
-    setTimeout(() => setIsAutoSaving(false), 800);
+    setTimeout(() => setIsAutoSaving(false), 600);
   };
 
-  // Execute Code via Judge0 / FastAPI
   const handleRunCode = async () => {
-    if (!currentPractical) {
-      addToast('No active practical selected.', 'warning');
-      return;
-    }
-
+    if (!currentPractical || !currentUser) return;
     setIsRunning(true);
-    setEvaluationPhase('compiling');
-    setEvaluationProgress(15);
-    setActiveTestIndex(-1);
+    setEvaluationPhase('executing');
+    setEvaluationProgress(20);
     setEvaluationResult(null);
 
-    const languageMap = {
-      cpp: 54,
-      c: 50,
-      python: 71,
-      java: 62,
-    };
-
-    const compilerFlags = {
-      cpp: 'g++ -O3 -std=c++20 -Wall -Wextra solution.cpp -o solution',
-      c: 'gcc -O3 -std=c17 -Wall -Wextra solution.c -o solution',
-      python: 'python3 -m py_compile solution.py',
-      java: 'javac -Xlint:all Main.java',
-    };
-
-    const payload = {
-      student_id: currentUser?.id || currentUser?.identifier || 'unassigned',
-      practical_id: currentPractical.id,
-      language_id: languageMap[language] || 54,
-      source_code: code,
-      attempt_count: 1,
-      time_spent_seconds: 420,
-      test_cases: currentPractical.testCases || [],
-    };
-
     try {
-      // Phase 1: Compilation
-      setLiveLogs([
-        `[00:00.040] [ENV] Initializing evaluation runtime...`,
-        `[00:00.120] [COMPILER] Target: ${compilerFlags[language] || compilerFlags.cpp}`,
-      ]);
+      const languageMap = { cpp: 54, c: 50, python: 71, java: 62 };
+      const result = await evaluateSubmission({
+        student_id: currentUser.id,
+        practical_id: currentPractical.id,
+        language_id: languageMap[language] || 54,
+        source_code: code,
+        attempt_count: 1,
+        time_spent_seconds: 0,
+        test_cases: currentPractical.testCases || [],
+      });
 
-      await new Promise((r) => setTimeout(r, 400));
-
-      // Phase 2: Execution Sandbox Initialization
-      setEvaluationPhase('executing');
-      setEvaluationProgress(35);
-      setLiveLogs((prev) => [
-        ...prev,
-        `[00:00.410] [SANDBOX] Applying resource bounds: CPU=2.0s, RAM=256MB`,
-        `[00:00.520] [HARNESS] Dispatching test suite to evaluator microservice...`,
-      ]);
-
-      const dataPromise = evaluateSubmission(payload);
-
-      await new Promise((r) => setTimeout(r, 350));
-
-      // Phase 3: Stepping through test cases progressively
-      setEvaluationPhase('testing');
-      const totalCases = currentPractical.testCases?.length || 3;
-      for (let i = 0; i < totalCases; i++) {
-        setActiveTestIndex(i);
-        setEvaluationProgress(40 + Math.round(((i + 1) / totalCases) * 45));
-        setLiveLogs((prev) => [
-          ...prev,
-          `[00:00.${600 + i * 140}] [EXEC] Running Test Case #${i + 1} (${currentPractical.testCases?.[i]?.is_sample ? 'Sample Input' : 'Curricular Test Case'})...`,
-        ]);
-        await new Promise((r) => setTimeout(r, 260));
-      }
-
-      // Phase 4: Tiering & AICTE Rubric calculation
-      setEvaluationPhase('tiering');
-      setEvaluationProgress(95);
-      setLiveLogs((prev) => [
-        ...prev,
-        `[00:01.080] [TIER] Computing AICTE 10-Mark Rubric & Adaptive Difficulty Tier...`,
-      ]);
-      await new Promise((r) => setTimeout(r, 240));
-
-      const data = await dataPromise;
-      const isSuccess = data.status === 'Passed';
-      setEvaluationResult(data);
-      setEvaluationPhase(isSuccess ? 'completed' : 'failed');
+      setEvaluationResult(result);
+      setEvaluationPhase(result.status === 'Passed' ? 'completed' : 'failed');
       setEvaluationProgress(100);
-      setActiveTestIndex(-1);
-
-      setLiveLogs((prev) => [
-        ...prev,
-        `[00:01.250] [COMPLETE] Evaluation finished: ${data.passed_test_cases}/${data.total_test_cases} test cases passed.`,
-        `[00:01.260] [SCORE] Coding Auto-Score: ${data.coding_marks_awarded} / 3.0 Marks awarded.`,
-        `[00:01.270] [ADAPTIVE] Status: ${data.status} | Tier: ${data.adaptive_tiering?.assigned_tier}`,
-      ]);
-
-      setStdoutMessage(
-        `[Evaluator Microservice Response]\n` +
-        `Status: ${data.status} (${data.is_simulation ? 'DEMO / SIMULATION' : 'EXECUTED'})\n` +
-        `Compiler: ${compilerFlags[language] || compilerFlags.cpp}\n\n` +
-        `Test Cases: ${data.passed_test_cases}/${data.total_test_cases} Passed (${Math.round(data.pass_percentage || 0)}%)\n` +
-        `Coding Marks: ${data.coding_marks_awarded} / 3.0 M\n` +
-        `Adaptive Tier: ${data.adaptive_tiering?.assigned_tier} (Recommended Next: ${data.adaptive_tiering?.recommended_difficulty} Level)\n` +
-        `Execution Telemetry: Process completed in optimal algorithmic bounds.`
-      );
-
-      if (data.status === 'Passed') {
-        addToast(
-          `All ${data.passed_test_cases}/${data.total_test_cases} test cases passed! ${data.coding_marks_awarded}/3.0 Coding Marks awarded.`,
-          'success'
-        );
-      } else {
-        addToast(
-          `Evaluation complete: ${data.passed_test_cases}/${data.total_test_cases} passed (${data.coding_marks_awarded}/3.0 Marks).`,
-          data.passed_test_cases > 0 ? 'warning' : 'danger'
-        );
-      }
-    } catch (err) {
-      console.error('Run code error:', err);
+      setStdoutMessage('Status: ' + result.status + '\nTest cases: ' + result.passed_test_cases + '/' + result.total_test_cases);
+    } catch (error) {
       setEvaluationPhase('failed');
-      addToast('Evaluation notice: Evaluation service unavailable.', 'warning');
+      setStdoutMessage('Evaluation failed: ' + error.message);
+      addToast(error.message || 'Evaluation service is unavailable.', 'danger');
     } finally {
       setIsRunning(false);
+      setActiveTestIndex(-1);
     }
   };
 
-  // Submit Practical to Supabase
   const handleSubmitPractical = async () => {
-    if (!evaluationResult) {
-      addToast('Please run and test your code first before submitting the practical.', 'warning');
+    if (!evaluationResult || !currentPractical) {
+      addToast('Run the practical before submitting it.', 'warning');
       return;
     }
 
-    const focusState = focusTracker.getState();
-
     try {
-      const newSub = await submitStudentPractical({
+      const focusState = focusTracker.getState();
+      const newSubmission = await submitStudentPractical({
         studentId: currentUser.id,
-        prn: currentUser.identifier || 'Unassigned',
-        studentName: currentUser.name || 'Student',
-        rollNumber: currentUser.identifier || 'Unassigned',
+        prn: currentUser.identifier,
+        studentName: currentUser.name,
+        rollNumber: currentUser.identifier,
         practicalId: currentPractical.id,
         practicalTitle: currentPractical.title,
         language,
-        codingMarks: evaluationResult.coding_marks_awarded ?? 0.0,
-        passRate: evaluationResult.pass_percentage || 0,
+        codingMarks: evaluationResult.coding_marks_awarded || 0,
         passedCount: evaluationResult.passed_test_cases || 0,
-        totalCount: evaluationResult.total_test_cases || currentPractical.testCases?.length || 0,
-        adaptiveTier: evaluationResult.adaptive_tiering?.assigned_tier || 'Beginner',
-        timeSpentSeconds: 420,
+        totalCount: evaluationResult.total_test_cases || 0,
+        timeSpentSeconds: 0,
         focusBlurEvents: focusState.blurEventsCount || 0,
         sourceCode: code,
       });
-
+      setSubmissions((prev) => [newSubmission, ...prev]);
       setIsSubmitted(true);
-      setSubmissions((prev) => [newSub, ...prev]);
-      addToast(`Practical submitted to Supabase! ${newSub.codingMarks}/3.0 coding marks logged.`, 'success');
-
-      // Refresh live submissions in background
-      getSubmissions(currentUser.id).then((fresh) => setSubmissions(fresh)).catch(() => {});
-    } catch (err) {
-      console.error('Submission failed:', err);
-      addToast(`Submission error: ${err.message}`, 'danger');
+      addToast('Practical submitted successfully.', 'success');
+    } catch (error) {
+      addToast(error.message, 'danger');
     }
   };
 
-  // Faculty Grade Submission
   const handleSaveGrade = async (submissionId, gradeData) => {
     try {
-      await gradeSubmission(submissionId, {
-        ...gradeData,
-        gradedBy: currentUser.id,
-      });
-
-      addToast('10-Mark Rubric Score recorded & audited successfully in Supabase!', 'success');
-
-      // Refresh submissions
-      const freshSubs = await getSubmissions();
-      setSubmissions(freshSubs);
-    } catch (err) {
-      console.error('Grading error:', err);
-      addToast(`Failed to record grade: ${err.message}`, 'danger');
+      await gradeSubmission(submissionId, { ...gradeData, gradedBy: currentUser.id });
+      setSubmissions(await getSubmissions());
+      addToast('Evaluation saved successfully.', 'success');
+    } catch (error) {
+      addToast(error.message, 'danger');
     }
   };
 
-  // If not logged in, render the unified Authentication View
-  if (!currentUser) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
-  }
+  const handleCreateAssignment = async ({ title, practicalId }) => {
+    if (!assignmentContext || !currentUser) return;
+    try {
+      await createAssignment({
+        facultyId: currentUser.id,
+        subjectId: assignmentContext.subject.id,
+        batchId: assignmentContext.batchId,
+        practicalId,
+        title,
+      });
+      setAssignmentContext(null);
+      addToast('Assignment created successfully.', 'success');
+    } catch (error) {
+      addToast(error.message, 'danger');
+    }
+  };
+
+  if (!currentUser) return <LoginView onLoginSuccess={handleLoginSuccess} />;
 
   const batchMetrics = computeBatchMetrics(submissions);
 
-  // Seamless 1-click persona switcher for SIH live judging & evaluation
-  const handleRoleChange = async (targetRole) => {
-    if (!currentUser) return;
-
-    if (currentUser.role === targetRole) {
-      setActiveRole(targetRole);
-      return;
-    }
-
-    addToast(`Authenticating demo session for ${targetRole}...`, 'info');
-    setIsLoadingData(true);
-
-    try {
-      // Authenticate via server-side demo-login endpoint (no credentials in client bundle)
-      const resData = await loginDemoAccount(targetRole);
-
-      if (resData.session?.access_token) {
-        await supabase.auth.setSession({
-          access_token: resData.session.access_token,
-          refresh_token: resData.session.refresh_token,
-        });
-      }
-
-      const activeProfile = resData.profile;
-      const newUser = {
-        id: activeProfile.id,
-        email: activeProfile.email,
-        identifier: activeProfile.identifier,
-        name: activeProfile.name,
-        role: activeProfile.role,
-        batchName: activeProfile.batchName,
-        status: activeProfile.status || 'active',
-      };
-
-      setCurrentUser(newUser);
-      setActiveRole(targetRole);
-      if (targetRole === 'student') {
-        setStudentView('dashboard');
-      }
-      addToast(`Active Persona: ${newUser.name} · Loaded real Supabase data`, 'success');
-    } catch (err) {
-      console.warn('Persona switch notice:', err.message);
-      // If server demo-login is not configured, update local state
-      setActiveRole(targetRole);
-    } finally {
-      setIsLoadingData(false);
-    }
-  };
-
-  const handleExportGradebook = () => {
-    const subjectCode = facultyAllocations[0]?.subjects?.code || 'CS201P';
-    exportGradebookCSV(submissions, subjectCode);
-    addToast('10-Mark Gradebook exported successfully (CSV format).', 'success');
-  };
-
   return (
     <div className="app-root">
-      {/* Top Application Bar */}
       <Header
         currentUser={currentUser}
         onLogout={handleLogout}
-        activeRole={activeRole}
-        onRoleChange={handleRoleChange}
         studentView={studentView}
-        onStudentViewChange={(view) => {
-          setStudentView(view);
-        }}
+        onStudentViewChange={setStudentView}
         currentPractical={currentPractical}
         onOpenPracticalModal={() => setIsPracticalModalOpen(true)}
         onOpenAuditDrawer={() => setIsAuditDrawerOpen(true)}
         onRunCode={handleRunCode}
         onSubmitPractical={handleSubmitPractical}
-        onExportGradebook={handleExportGradebook}
+        onExportGradebook={() => exportGradebookCSV(submissions, selectedSubject?.code || facultyAllocations[0]?.subjects?.code || 'EduLab')}
         isRunning={isRunning}
         isSubmitted={isSubmitted}
       />
 
-      {/* Main Experience: Student (Dashboard vs Workspace) vs Faculty Dashboard */}
-      {activeRole === 'student' ? (
+      {currentUser.role === 'student' ? (
         studentView === 'dashboard' ? (
           <StudentDashboard
             currentUser={currentUser}
@@ -525,17 +317,13 @@ export default function App() {
             submissions={submissions}
             currentPractical={currentPractical}
             practicals={practicals}
+            subjects={studentSubjects}
+            onSelectSubject={handleSelectSubject}
             isLoading={isLoadingData}
             error={dataError}
             onRetry={loadData}
-            onContinuePractical={(prac) => {
-              if (prac) handleSelectPractical(prac);
-              setStudentView('workspace');
-            }}
-            onSelectPractical={(prac) => {
-              handleSelectPractical(prac);
-              setStudentView('workspace');
-            }}
+            onContinuePractical={(practical) => { if (practical) handleSelectPractical(practical); setStudentView('workspace'); }}
+            onSelectPractical={(practical) => { handleSelectPractical(practical); setStudentView('workspace'); }}
           />
         ) : (
           <StudentWorkspace
@@ -544,7 +332,7 @@ export default function App() {
             onLanguageChange={handleLanguageChange}
             code={code}
             onCodeChange={handleCodeChange}
-            onResetCode={handleResetCode}
+            onResetCode={() => setIsResetConfirmModalOpen(true)}
             isRunning={isRunning}
             evaluationPhase={evaluationPhase}
             evaluationProgress={evaluationProgress}
@@ -561,15 +349,19 @@ export default function App() {
           currentUser={currentUser}
           facultyAllocations={facultyAllocations}
           submissions={submissions}
+          practicals={practicals}
           batchMetrics={batchMetrics}
           isLoading={isLoadingData}
           error={dataError}
           onRetry={loadData}
           onSaveGrade={handleSaveGrade}
+          onCreateAssignment={(context) => {
+            const batch = context.subject.allocations.find((a) => a.batch_id === context.batchId)?.batches;
+            setAssignmentContext({ ...context, batchName: batch?.name || 'Selected' });
+          }}
         />
       )}
 
-      {/* Practical Picker Modal */}
       <PracticalModal
         isOpen={isPracticalModalOpen}
         onClose={() => setIsPracticalModalOpen(false)}
@@ -578,42 +370,23 @@ export default function App() {
         onSelectPractical={handleSelectPractical}
       />
 
-      {/* Reset Confirmation Modal */}
+      <CreateAssignmentModal
+        isOpen={Boolean(assignmentContext)}
+        onClose={() => setAssignmentContext(null)}
+        context={assignmentContext}
+        onCreate={handleCreateAssignment}
+      />
+
       <Modal
         isOpen={isResetConfirmModalOpen}
         onClose={() => setIsResetConfirmModalOpen(false)}
-        title="Reset Editor to Starter Code"
-        maxWidth="460px"
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => setIsResetConfirmModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleConfirmReset}
-            >
-              Reset to Template
-            </Button>
-          </>
-        }
+        title="Reset Editor"
+        footer={<><Button variant="secondary" onClick={() => setIsResetConfirmModalOpen(false)}>Cancel</Button><Button variant="danger" onClick={() => { handleSelectPractical(currentPractical); setIsResetConfirmModalOpen(false); }}>Reset</Button></>}
       >
-        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
-          Are you sure you want to reset your editor? Any unsaved edits for{' '}
-          <strong style={{ color: 'var(--text-primary)' }}>{currentPractical?.title?.split(':')[0]}</strong> will be replaced with the default boilerplate starter code.
-        </p>
+        <p>Reset the editor to the practical's starter code?</p>
       </Modal>
 
-      {/* Audit Log Drawer */}
-      <AuditLogDrawer
-        isOpen={isAuditDrawerOpen}
-        onClose={() => setIsAuditDrawerOpen(false)}
-      />
-
-      {/* Toast Notification Layer */}
+      <AuditLogDrawer isOpen={isAuditDrawerOpen} onClose={() => setIsAuditDrawerOpen(false)} />
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

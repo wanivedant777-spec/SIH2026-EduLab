@@ -7,6 +7,8 @@ import PracticalsList from './PracticalsList';
 import PerformanceAnalytics from './PerformanceAnalytics';
 import SkillMap from './SkillMap';
 import RecentActivity from './RecentActivity';
+import StudentProfileCard from './StudentProfileCard';
+import SubjectSelector from './SubjectSelector';
 
 export default function StudentDashboard({
   currentUser,
@@ -19,6 +21,8 @@ export default function StudentDashboard({
   onRetry,
   onContinuePractical,
   onSelectPractical,
+  subjects = [],
+  onSelectSubject,
 }) {
   const rollNumber = studentProfile?.identifier || currentUser?.identifier || 'Not Assigned';
   const batchName = studentProfile?.batches?.name || currentUser?.batchName || 'Unassigned';
@@ -111,6 +115,10 @@ export default function StudentDashboard({
   return (
     <div className="student-dashboard-page">
       <div className="dashboard-container">
+        <StudentProfileCard profile={studentProfile} currentUser={currentUser} />
+
+        <SubjectSelector subjects={subjects} onSelect={(subject) => onSelectSubject && onSelectSubject(subject)} />
+
         {/* Error state banner if Supabase fails */}
         {error && (
           <div className="db-error-banner" style={{
@@ -169,12 +177,11 @@ export default function StudentDashboard({
 
                   {/* Main Headline */}
                   <h1 className="hero-title">
-                    Master Non-Linear <br />
-                    <span className="text-accent-gradient">Data Structures &amp; Algorithms</span>
+                    {activePractical?.subjectName || 'Select a Subject'}
                   </h1>
 
                   <p className="hero-description">
-                    Interactive compiler sandbox with Judge0 runtime evaluation, non-punitive focus integrity telemetry, and faculty-verified AICTE 10-mark academic rubric assessment (3M Coding + 5M Journal + 2M Viva).
+                    Choose one of your available subjects above. Only practicals from the selected subject are loaded into your workspace.
                   </p>
 
                   {/* "Continue Practical" Primary Card */}
@@ -195,7 +202,7 @@ export default function StudentDashboard({
                     <div className="continue-card-meta-row">
                       <div className="continue-meta-item">
                         <BookOpen size={13} color="var(--accent-text)" />
-                        <span>{activePractical?.courseCode?.split(':')[0] || 'CS201P'}</span>
+                        <span>{activePractical?.subjectCode || 'Subject'}</span>
                       </div>
                       <div className="continue-meta-item">
                         <Clock size={13} color="var(--text-muted)" />
