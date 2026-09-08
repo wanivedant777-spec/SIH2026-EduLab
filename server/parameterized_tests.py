@@ -1,28 +1,22 @@
 """
-EduLab Parameterized Test Case Generator Module
+EduLab Parameterized Test Case Generator & Canonical Practical Registry
 SIH 2026 - Problem Statement SIH26207
 
-Core anti-cheating mechanism:
-Generates deterministic, student-specific hidden test cases per practical.
-Each student receives different inputs for the same practical, but the inputs
-are reproducible for the same student across repeated attempts.
-
-Key Design Principles:
-1. Deterministic Seeding: Derived via SHA-256 hash of student_id + practical_id + test_index.
-2. Ground-Truth Solvers: Expected outputs are dynamically computed by reference algorithmic
-   implementations (never hardcoded strings).
-3. Non-Punitive Philosophy: Focuses on verification and learning integrity; no false ML/AI claims.
-4. Privacy: Hidden inputs and expected outputs are not exposed in cleartext to the frontend.
+Resolves practicals by canonical ID, title, and subject rather than
+practical_number alone. Disambiguates duplicate practical numbers safely,
+enforces exact pedagogical input/output contracts, and raises explicit
+errors for unsupported practicals (fail-fast, no silent fallbacks).
 """
 
 import hashlib
 import random
 import re
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Callable
 from pydantic import BaseModel, Field
 
 
 class ParameterizedTestCase(BaseModel):
+    __test__ = False
     input_data: str = Field(..., description="Standard input passed to program")
     expected_output: str = Field(..., description="Ground-truth expected stdout")
     is_sample: bool = Field(default=False, description="Always False for hidden cases")
@@ -30,75 +24,286 @@ class ParameterizedTestCase(BaseModel):
     test_case_label: Optional[str] = Field(default=None, description="e.g. Parameterized Hidden Case #1")
 
 
+class CanonicalPracticalInfo(BaseModel):
+    canonical_key: str
+    practical_number: int
+    title: str
+    subject_code: str
+    aim: str
+
+
+class UnsupportedPracticalError(Exception):
+    """Raised when an evaluation request specifies an unmapped or unknown practical."""
+    def __init__(self, practical_id: str, title: Optional[str] = None, number: Optional[int] = None, subject: Optional[str] = None):
+        msg = (
+            f"No canonical test generator registered for practical: "
+            f"practical_id='{practical_id}', title='{title}', practical_number={number}, subject='{subject}'. "
+            f"Please verify the practical catalog configuration."
+        )
+        super().__init__(msg)
+        self.practical_id = practical_id
+        self.title = title
+        self.number = number
+        self.subject = subject
+
+
+# ===========================================================================
+# 1. Canonical Live Practical Catalog (CS201P Data Structures & Algorithms)
+# ===========================================================================
+
+CANONICAL_CS201P_CATALOG: Dict[str, CanonicalPracticalInfo] = {
+    "cs201p_p01_linked_list": CanonicalPracticalInfo(
+        canonical_key="cs201p_p01_linked_list",
+        practical_number=1,
+        title="Practical 01: Singly Linked List Implementation & Operations",
+        subject_code="CS201P",
+        aim="Implement a dynamic Singly Linked List supporting head/tail insertion, deletion, and linear traversal.",
+    ),
+    "cs201p_p01_array_max": CanonicalPracticalInfo(
+        canonical_key="cs201p_p01_array_max",
+        practical_number=1,
+        title="Practical 01: Find the Largest Number in an Array",
+        subject_code="CS201P",
+        aim="Traverse array maintaining running maximum invariant with O(N) time and O(1) space.",
+    ),
+    "cs201p_p02_parentheses": CanonicalPracticalInfo(
+        canonical_key="cs201p_p02_parentheses",
+        practical_number=2,
+        title="Practical 02: Stack Implementation & Balanced Parentheses Validation",
+        subject_code="CS201P",
+        aim="Construct an array-based Stack to validate balanced parentheses strings (), {}, [].",
+    ),
+    "cs201p_p02_array_stack": CanonicalPracticalInfo(
+        canonical_key="cs201p_p02_array_stack",
+        practical_number=2,
+        title="Practical 02: Implement Stack Using Array",
+        subject_code="CS201P",
+        aim="Implement basic stack operations PUSH, POP, PEEK with overflow and underflow checks.",
+    ),
+    "cs201p_p03_circular_queue": CanonicalPracticalInfo(
+        canonical_key="cs201p_p03_circular_queue",
+        practical_number=3,
+        title="Practical 03: Circular Queue & Priority Queue Scheduling",
+        subject_code="CS201P",
+        aim="Design and implement a Circular Queue using modular arithmetic to prevent false overflow.",
+    ),
+    "cs201p_p04_bst": CanonicalPracticalInfo(
+        canonical_key="cs201p_p04_bst",
+        practical_number=4,
+        title="Practical 04: Binary Search Tree (BST) Insertion & Inorder Traversal",
+        subject_code="CS201P",
+        aim="Implement a BST, perform element insertion maintaining BST invariant, and verify sorted output via Inorder Traversal.",
+    ),
+    "cs201p_p05_avl": CanonicalPracticalInfo(
+        canonical_key="cs201p_p05_avl",
+        practical_number=5,
+        title="Practical 05: AVL Tree: Height-Balanced Binary Search Tree",
+        subject_code="CS201P",
+        aim="Construct an AVL tree supporting LL, RR, LR, and RL rotations to maintain balance factor in [-1, 0, 1].",
+    ),
+    "cs201p_p06_graph_bfs": CanonicalPracticalInfo(
+        canonical_key="cs201p_p06_graph_bfs",
+        practical_number=6,
+        title="Practical 06: Graph Traversal: Breadth First Search (BFS) & Depth First Search (DFS)",
+        subject_code="CS201P",
+        aim="Model an undirected graph via adjacency list and execute BFS traversal from vertex 0.",
+    ),
+    "cs201p_p07_dijkstra": CanonicalPracticalInfo(
+        canonical_key="cs201p_p07_dijkstra",
+        practical_number=7,
+        title="Practical 07: Dijkstra Algorithm: Single-Source Shortest Path",
+        subject_code="CS201P",
+        aim="Find the shortest distance from source vertex 0 to all other vertices in a non-negative weighted graph.",
+    ),
+    "cs201p_p08_mst": CanonicalPracticalInfo(
+        canonical_key="cs201p_p08_mst",
+        practical_number=8,
+        title="Practical 08: Minimum Spanning Tree (MST): Kruskal & Prim Algorithms",
+        subject_code="CS201P",
+        aim="Compute the Minimum Spanning Tree of a connected weighted graph using Kruskal's disjoint set union.",
+    ),
+    "cs201p_p09_hash_table": CanonicalPracticalInfo(
+        canonical_key="cs201p_p09_hash_table",
+        practical_number=9,
+        title="Practical 09: Hash Table with Open Addressing & Collision Resolution",
+        subject_code="CS201P",
+        aim="Implement a fixed-size Hash Table with modulo hashing and Linear Probing for collision resolution.",
+    ),
+    "cs201p_p10_sorting": CanonicalPracticalInfo(
+        canonical_key="cs201p_p10_sorting",
+        practical_number=10,
+        title="Practical 10: Empirical Complexity Analysis: QuickSort vs MergeSort vs HeapSort",
+        subject_code="CS201P",
+        aim="Implement divide-and-conquer sorting algorithms (QuickSort, MergeSort) and verify sorted output.",
+    ),
+}
+
+
+# ===========================================================================
+# 2. Canonical Practical Resolver (Multi-Factor Disambiguation)
+# ===========================================================================
+
+def resolve_canonical_practical(
+    practical_id: str,
+    practical_title: Optional[str] = None,
+    practical_number: Optional[int] = None,
+    subject_code: Optional[str] = None,
+) -> CanonicalPracticalInfo:
+    """
+    Multi-factor practical resolver. Does NOT rely on practical_number alone.
+    Disambiguates duplicate numbers using title keywords and canonical IDs.
+    Raises UnsupportedPracticalError if the practical is unmapped or unknown.
+    """
+    raw_id = str(practical_id or "").strip().lower()
+    raw_title = str(practical_title or "").strip().lower()
+    combined_text = f"{raw_id} {raw_title}"
+
+    # 1. Direct Canonical Key Match
+    if raw_id in CANONICAL_CS201P_CATALOG:
+        return CANONICAL_CS201P_CATALOG[raw_id]
+
+    # 2. High-Specificity Semantic Keyword Matching
+    # Check Array Maximum vs Linked List (Both might have practical_number=1)
+    if "largest" in combined_text or "max val" in combined_text or "maximum" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p01_array_max"]
+
+    if "linked list" in combined_text or "singly linked" in combined_text or "node insertion" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p01_linked_list"]
+
+    # Check Array Stack vs Balanced Parentheses (Both might have practical_number=2)
+    if "stack using array" in combined_text or "array stack" in combined_text or ("stack" in combined_text and ("push" in combined_text or "pop" in combined_text or "peek" in combined_text)):
+        return CANONICAL_CS201P_CATALOG["cs201p_p02_array_stack"]
+
+    if "parenthes" in combined_text or "bracket" in combined_text or "balanced" in combined_text:
+        # Distinguish AVL tree ("balanced avl") from balanced parentheses
+        if "avl" not in combined_text:
+            return CANONICAL_CS201P_CATALOG["cs201p_p02_parentheses"]
+
+    # Queue
+    if "queue" in combined_text or "circular queue" in combined_text or "enqueue" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p03_circular_queue"]
+
+    # AVL Tree (must precede generic BST because AVL is a self-balancing binary search tree)
+    if "avl" in combined_text or "rotation" in combined_text or "height-balanced" in combined_text or "height balanced" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p05_avl"]
+
+    # BST (Binary Search Tree)
+    if "binary search tree" in combined_text or "bst" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p04_bst"]
+
+    # Graph BFS
+    if "bfs" in combined_text or "breadth first" in combined_text or "graph traversal" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p06_graph_bfs"]
+
+    # Dijkstra Shortest Path
+    if "dijkstra" in combined_text or "shortest path" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p07_dijkstra"]
+
+    # Minimum Spanning Tree
+    if "spanning tree" in combined_text or "mst" in combined_text or "kruskal" in combined_text or "prim" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p08_mst"]
+
+    # Hash Table
+    if "hash table" in combined_text or "linear probing" in combined_text or "open addressing" in combined_text or "modulo hashing" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p09_hash_table"]
+
+    # Sorting
+    if "sort" in combined_text or "quicksort" in combined_text or "mergesort" in combined_text or "heapsort" in combined_text:
+        return CANONICAL_CS201P_CATALOG["cs201p_p10_sorting"]
+
+    # 3. Slug-based Resolution (e.g. prac_dsa_04_bst)
+    slug_map = {
+        "prac_dsa_01": "cs201p_p01_linked_list",
+        "prac_dsa_01_linked_list": "cs201p_p01_linked_list",
+        "prac_dsa_02": "cs201p_p02_parentheses",
+        "prac_dsa_02_parentheses": "cs201p_p02_parentheses",
+        "prac_dsa_03": "cs201p_p03_circular_queue",
+        "prac_dsa_03_queue": "cs201p_p03_circular_queue",
+        "prac_dsa_04": "cs201p_p04_bst",
+        "prac_dsa_04_bst": "cs201p_p04_bst",
+        "prac_dsa_05": "cs201p_p05_avl",
+        "prac_dsa_05_avl": "cs201p_p05_avl",
+        "prac_dsa_06": "cs201p_p06_graph_bfs",
+        "prac_dsa_06_bfs": "cs201p_p06_graph_bfs",
+        "prac_dsa_06_dijkstra": "cs201p_p07_dijkstra",  # legacy mock mapping
+        "prac_dsa_07": "cs201p_p07_dijkstra",
+        "prac_dsa_07_dijkstra": "cs201p_p07_dijkstra",
+        "prac_dsa_08": "cs201p_p08_mst",
+        "prac_dsa_08_mst": "cs201p_p08_mst",
+        "prac_dsa_09": "cs201p_p09_hash_table",
+        "prac_dsa_09_hash_table": "cs201p_p09_hash_table",
+        "prac_dsa_10": "cs201p_p10_sorting",
+        "prac_dsa_10_sorting": "cs201p_p10_sorting",
+    }
+    for slug_prefix, c_key in slug_map.items():
+        if slug_prefix in raw_id:
+            return CANONICAL_CS201P_CATALOG[c_key]
+
+    # 4. Fallback on explicit practical_number ONLY if no conflicting title was provided
+    # and the number maps directly to the standard 10 syllabus practicals
+    if practical_number is not None and 1 <= practical_number <= 10:
+        num_map = {
+            1: "cs201p_p01_linked_list",
+            2: "cs201p_p02_parentheses",
+            3: "cs201p_p03_circular_queue",
+            4: "cs201p_p04_bst",
+            5: "cs201p_p05_avl",
+            6: "cs201p_p06_graph_bfs",
+            7: "cs201p_p07_dijkstra",
+            8: "cs201p_p08_mst",
+            9: "cs201p_p09_hash_table",
+            10: "cs201p_p10_sorting",
+        }
+        return CANONICAL_CS201P_CATALOG[num_map[practical_number]]
+
+    # 5. Fail-Fast: Do NOT silently map an unknown practical to Practical 01 or 10
+    raise UnsupportedPracticalError(
+        practical_id=practical_id,
+        title=practical_title,
+        number=practical_number,
+        subject=subject_code,
+    )
+
+
+# ===========================================================================
+# 3. Ground-Truth Algorithmic Solvers
+# ===========================================================================
+
 def get_deterministic_seed(student_id: str, practical_id: str, case_idx: int = 0) -> int:
-    """
-    Computes a deterministic 64-bit integer seed from student_id, practical_id, and case index.
-    Guarantees:
-      - Same student + same practical + same index => identical seed.
-      - Different student => different seed.
-    """
+    """Deterministic 64-bit integer seed via SHA-256."""
     token = f"{str(student_id).strip()}::{str(practical_id).strip()}::{case_idx}"
     digest = hashlib.sha256(token.encode("utf-8")).digest()
     return int.from_bytes(digest[:8], byteorder="big")
 
 
-def resolve_practical_number(practical_id: str, practical_number: Optional[int] = None) -> int:
-    """
-    Resolves the canonical practical number (1 to 10) from practical_number or practical_id.
-    Handles identifiers like 'prac_dsa_01', 'p4', UUIDs with known mapping, or digits.
-    Defaults to 1 if no number can be determined.
-    """
-    if practical_number is not None and 1 <= practical_number <= 10:
-        return practical_number
-
-    p_str = str(practical_id).lower().strip()
-
-    # Match patterns like prac_dsa_04, practical_4, p02, etc.
-    match = re.search(r"(?:practical|prac|p)[_\-\s]*0*(\d+)", p_str)
-    if match:
-        num = int(match.group(1))
-        if 1 <= num <= 10:
-            return num
-
-    # Generic digit match
-    digits = re.findall(r"\b(\d{1,2})\b", p_str)
-    for d in digits:
-        val = int(d)
-        if 1 <= val <= 10:
-            return val
-
-    # Default fallback
-    return 1
-
-
-# ---------------------------------------------------------------------------
-# Canonical Ground-Truth Algorithmic Solvers (CS201P Data Structures)
-# ---------------------------------------------------------------------------
-
 def generate_p1_singly_linked_list(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 01: Singly Linked List Traversal
-    Input: N on first line, followed by N space-separated integers.
-    Output: Space-separated traversal.
-    """
+    """Practical 01: Singly Linked List Traversal"""
     if is_edge_case:
         n = rng.choice([1, 2])
         vals = [rng.randint(-50, 50) for _ in range(n)]
     else:
         n = rng.randint(4, 9)
         vals = [rng.randint(1, 200) for _ in range(n)]
-
     input_data = f"{n}\n{' '.join(map(str, vals))}"
     expected_output = " ".join(map(str, vals))
     return input_data, expected_output
 
 
+def generate_p1_array_max(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
+    """Practical 01 Variant: Find the Largest Number in an Array"""
+    if is_edge_case:
+        n = 1
+        vals = [rng.randint(-100, 100)]
+    else:
+        n = rng.randint(4, 10)
+        vals = [rng.randint(-200, 500) for _ in range(n)]
+    input_data = f"{n}\n{' '.join(map(str, vals))}"
+    expected_output = str(max(vals))
+    return input_data, expected_output
+
+
 def generate_p2_balanced_parentheses(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 02: Balanced Parentheses Validation
-    Input: String of brackets (), {}, [].
-    Output: 'VALID' or 'INVALID'.
-    """
+    """Practical 02: Balanced Parentheses Validation"""
     pairs = [("(", ")"), ("{", "}"), ("[", "]")]
 
     def make_balanced(depth: int) -> str:
@@ -123,40 +328,57 @@ def generate_p2_balanced_parentheses(rng: random.Random, is_edge_case: bool = Fa
 
     should_be_valid = rng.choice([True, False])
     if should_be_valid:
-        s = make_balanced(rng.randint(2, 4))
-        if not s:
-            s = "()"
+        s = make_balanced(rng.randint(2, 4)) or "()"
     else:
-        # Corrupt a balanced string or construct mismatched brackets
         base = list(make_balanced(rng.randint(2, 3)) or "()[]")
         if rng.random() > 0.5:
-            # Drop a character
-            idx = rng.randint(0, len(base) - 1)
-            base.pop(idx)
+            base.pop(rng.randint(0, len(base) - 1))
         else:
-            # Replace character with opposite or wrong bracket
-            idx = rng.randint(0, len(base) - 1)
-            base[idx] = rng.choice([")", "}", "]", "(", "{", "["])
-        s = "".join(base)
-        if not s:
-            s = "(["
+            base[rng.randint(0, len(base) - 1)] = rng.choice([")", "}", "]", "(", "{", "["])
+        s = "".join(base) or "(["
 
     expected = "VALID" if is_valid(s) else "INVALID"
     return s, expected
 
 
+def generate_p2_array_stack(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
+    """Practical 02 Variant: Implement Stack Using Array (PUSH, POP, PEEK)"""
+    num_ops = rng.randint(3, 5) if is_edge_case else rng.randint(6, 10)
+    st = []
+    ops = []
+    outs = []
+
+    for _ in range(num_ops):
+        action = rng.choice(["PUSH", "PUSH", "POP", "PEEK"])
+        if action == "PUSH":
+            val = rng.randint(1, 99)
+            st.append(val)
+            ops.extend(["PUSH", str(val)])
+        elif action == "POP":
+            ops.append("POP")
+            if not st:
+                outs.append("Stack Underflow")
+            else:
+                outs.append(str(st.pop()))
+        elif action == "PEEK":
+            ops.append("PEEK")
+            if not st:
+                outs.append("Stack is Empty")
+            else:
+                outs.append(str(st[-1]))
+
+    input_data = " ".join(ops)
+    expected_output = "\n".join(outs)
+    return input_data, expected_output
+
+
 def generate_p3_circular_queue(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 03: Circular Queue
-    Input: N operations (ENQUEUE <val> or DEQUEUE).
-    Output: Space-separated remaining elements in queue, or empty string.
-    """
+    """Practical 03: Circular Queue"""
     queue: List[int] = []
     ops: List[str] = []
-
     num_ops = rng.randint(3, 5) if is_edge_case else rng.randint(6, 10)
+
     for _ in range(num_ops):
-        # Biased towards enqueue if queue empty
         if not queue or rng.random() > 0.4:
             v = rng.randint(5, 99)
             ops.append(f"ENQUEUE {v}")
@@ -171,15 +393,9 @@ def generate_p3_circular_queue(rng: random.Random, is_edge_case: bool = False) -
 
 
 def generate_p4_bst_inorder(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 04: Binary Search Tree Insertion & Inorder Traversal
-    Input: N followed by N integers.
-    Output: Space-separated inorder traversal (sorted order).
-    """
+    """Practical 04: Binary Search Tree Insertion & Inorder Traversal"""
     n = rng.choice([2, 3]) if is_edge_case else rng.randint(5, 8)
     vals = rng.sample(range(-50, 150), n)
-
-    # Inorder traversal of BST with distinct keys is strictly ascending
     sorted_vals = sorted(vals)
     input_data = f"{n}\n{' '.join(map(str, vals))}"
     expected_output = " ".join(map(str, sorted_vals))
@@ -187,29 +403,18 @@ def generate_p4_bst_inorder(rng: random.Random, is_edge_case: bool = False) -> T
 
 
 def generate_p5_avl_tree(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 05: AVL Tree (Height-Balanced BST)
-    Input: N followed by N distinct keys.
-    Output: Space-separated inorder traversal.
-    """
+    """Practical 05: AVL Tree (Height-Balanced BST)"""
     n = rng.choice([2, 3]) if is_edge_case else rng.randint(5, 9)
-    # Distinct integers to trigger AVL balance rotations
     vals = rng.sample(range(10, 300), n)
     sorted_vals = sorted(vals)
-
     input_data = f"{n}\n{' '.join(map(str, vals))}"
     expected_output = " ".join(map(str, sorted_vals))
     return input_data, expected_output
 
 
 def generate_p6_graph_bfs(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 06: Graph Traversal - Breadth First Search (BFS)
-    Input: V E, followed by E lines of undirected edges (u v).
-    Output: BFS traversal starting at vertex 0 with neighbors processed in ascending order.
-    """
+    """Practical 06: Graph Traversal - Breadth First Search (BFS)"""
     V = rng.choice([3, 4]) if is_edge_case else rng.randint(4, 6)
-    # Build a connected spanning tree first, then add extra edges
     edges = set()
     nodes = list(range(V))
     rng.shuffle(nodes)
@@ -218,11 +423,9 @@ def generate_p6_graph_bfs(rng: random.Random, is_edge_case: bool = False) -> Tup
     for node in nodes[1:]:
         u = rng.choice(connected)
         v = node
-        edge = (min(u, v), max(u, v))
-        edges.add(edge)
+        edges.add((min(u, v), max(u, v)))
         connected.append(node)
 
-    # Add a few random edges
     extra = 1 if is_edge_case else rng.randint(1, 3)
     for _ in range(extra):
         u = rng.randint(0, V - 1)
@@ -230,7 +433,6 @@ def generate_p6_graph_bfs(rng: random.Random, is_edge_case: bool = False) -> Tup
         if u != v:
             edges.add((min(u, v), max(u, v)))
 
-    # Ground-truth BFS from 0
     adj: Dict[int, List[int]] = {i: [] for i in range(V)}
     for u, v in edges:
         adj[u].append(v)
@@ -261,24 +463,18 @@ def generate_p6_graph_bfs(rng: random.Random, is_edge_case: bool = False) -> Tup
 
 
 def generate_p7_dijkstra(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 07: Dijkstra Single-Source Shortest Path
-    Input: V E src, followed by E lines of u v w.
-    Output: Space-separated shortest distances from src to 0..V-1 (-1 if unreachable).
-    """
+    """Practical 07: Dijkstra Single-Source Shortest Path"""
     import heapq
 
     V = 3 if is_edge_case else rng.randint(4, 5)
     src = 0
     edges: Dict[Tuple[int, int], int] = {}
 
-    # Spanning tree
     for i in range(1, V):
         u = rng.randint(0, i - 1)
         w = rng.randint(1, 10)
         edges[(min(u, i), max(u, i))] = w
 
-    # Additional edges
     extra = 0 if is_edge_case else rng.randint(1, 2)
     for _ in range(extra):
         u = rng.randint(0, V - 1)
@@ -286,7 +482,6 @@ def generate_p7_dijkstra(rng: random.Random, is_edge_case: bool = False) -> Tupl
         if u != v:
             edges[(min(u, v), max(u, v))] = rng.randint(1, 12)
 
-    # Reference Dijkstra
     adj: Dict[int, List[Tuple[int, int]]] = {i: [] for i in range(V)}
     for (u, v), w in edges.items():
         adj[u].append((v, w))
@@ -316,16 +511,11 @@ def generate_p7_dijkstra(rng: random.Random, is_edge_case: bool = False) -> Tupl
 
 
 def generate_p8_mst_kruskal(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 08: Minimum Spanning Tree (MST)
-    Input: V E, followed by E lines of u v w.
-    Output: Integer representing total MST weight.
-    """
+    """Practical 08: Minimum Spanning Tree (MST)"""
     V = 3 if is_edge_case else rng.randint(4, 5)
     edges: List[Tuple[int, int, int]] = []
     used_pairs = set()
 
-    # Ensure connected graph
     for i in range(1, V):
         u = rng.randint(0, i - 1)
         w = rng.randint(1, 15)
@@ -342,7 +532,6 @@ def generate_p8_mst_kruskal(rng: random.Random, is_edge_case: bool = False) -> T
             edges.append((u, v, w))
             used_pairs.add(pair)
 
-    # Reference Kruskal's Algorithm
     parent = list(range(V))
 
     def find(x: int) -> int:
@@ -373,16 +562,11 @@ def generate_p8_mst_kruskal(rng: random.Random, is_edge_case: bool = False) -> T
 
 
 def generate_p9_hash_table_linear_probing(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 09: Hash Table with Linear Probing
-    Input: size n, followed by n keys.
-    Output: Space-separated table array with -1 for unoccupied slots.
-    """
+    """Practical 09: Hash Table with Linear Probing"""
     size = rng.choice([4, 5]) if is_edge_case else rng.randint(5, 8)
     n = max(1, size - 2) if is_edge_case else max(1, size - rng.randint(1, 2))
     keys = [rng.randint(1, 99) for _ in range(n)]
 
-    # Ground truth: modulo hashing + linear probing
     table = [-1] * size
     for k in keys:
         idx = k % size
@@ -396,11 +580,7 @@ def generate_p9_hash_table_linear_probing(rng: random.Random, is_edge_case: bool
 
 
 def generate_p10_sorting_benchmark(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
-    """
-    Practical 10: Sorting Benchmark (Merge/Quick/HeapSort)
-    Input: N, followed by N integers (supports negative values and duplicates).
-    Output: Space-separated sorted sequence.
-    """
+    """Practical 10: Sorting Benchmark (Merge/Quick/HeapSort)"""
     n = rng.choice([2, 3]) if is_edge_case else rng.randint(6, 12)
     vals = [rng.randint(-50, 100) for _ in range(n)]
     sorted_vals = sorted(vals)
@@ -410,35 +590,54 @@ def generate_p10_sorting_benchmark(rng: random.Random, is_edge_case: bool = Fals
     return input_data, expected_output
 
 
-# Generator dispatch registry
-GENERATOR_MAP = {
-    1: generate_p1_singly_linked_list,
-    2: generate_p2_balanced_parentheses,
-    3: generate_p3_circular_queue,
-    4: generate_p4_bst_inorder,
-    5: generate_p5_avl_tree,
-    6: generate_p6_graph_bfs,
-    7: generate_p7_dijkstra,
-    8: generate_p8_mst_kruskal,
-    9: generate_p9_hash_table_linear_probing,
-    10: generate_p10_sorting_benchmark,
+# ===========================================================================
+# 4. Canonical Generator Registry
+# ===========================================================================
+
+CANONICAL_GENERATOR_REGISTRY: Dict[str, Callable[[random.Random, bool], Tuple[str, str]]] = {
+    "cs201p_p01_linked_list": generate_p1_singly_linked_list,
+    "cs201p_p01_array_max": generate_p1_array_max,
+    "cs201p_p02_parentheses": generate_p2_balanced_parentheses,
+    "cs201p_p02_array_stack": generate_p2_array_stack,
+    "cs201p_p03_circular_queue": generate_p3_circular_queue,
+    "cs201p_p04_bst": generate_p4_bst_inorder,
+    "cs201p_p05_avl": generate_p5_avl_tree,
+    "cs201p_p06_graph_bfs": generate_p6_graph_bfs,
+    "cs201p_p07_dijkstra": generate_p7_dijkstra,
+    "cs201p_p08_mst": generate_p8_mst_kruskal,
+    "cs201p_p09_hash_table": generate_p9_hash_table_linear_probing,
+    "cs201p_p10_sorting": generate_p10_sorting_benchmark,
 }
 
 
 def generate_parameterized_test_cases(
     student_id: str,
     practical_id: str,
+    practical_title: Optional[str] = None,
     practical_number: Optional[int] = None,
+    subject_code: Optional[str] = None,
     count: int = 2,
 ) -> List[ParameterizedTestCase]:
     """
-    Generates deterministic hidden parameterized test cases for a given student and practical.
-    - Uses SHA-256(student_id + practical_id + case_idx) as seed.
-    - Generates 1 nominal case and (count - 1) edge cases.
-    - Returns ParameterizedTestCase objects with is_sample=False, is_parameterized=True.
+    Resolves the canonical practical via multi-factor matching (ID + title + number).
+    Raises UnsupportedPracticalError if the practical is unmapped or unknown.
+    Generates deterministic hidden test cases using SHA-256 seeding.
     """
-    p_num = resolve_practical_number(practical_id, practical_number)
-    generator_func = GENERATOR_MAP.get(p_num, generate_p10_sorting_benchmark)
+    practical_info = resolve_canonical_practical(
+        practical_id=practical_id,
+        practical_title=practical_title,
+        practical_number=practical_number,
+        subject_code=subject_code,
+    )
+
+    generator_func = CANONICAL_GENERATOR_REGISTRY.get(practical_info.canonical_key)
+    if not generator_func:
+        raise UnsupportedPracticalError(
+            practical_id=practical_id,
+            title=practical_title,
+            number=practical_number,
+            subject=subject_code,
+        )
 
     results: List[ParameterizedTestCase] = []
 
@@ -455,7 +654,7 @@ def generate_parameterized_test_cases(
                 expected_output=exp_out.strip(),
                 is_sample=False,
                 is_parameterized=True,
-                test_case_label=f"Parameterized Hidden Case #{idx + 1}",
+                test_case_label=f"Parameterized Hidden Case #{idx + 1} ({practical_info.title})",
             )
         )
 

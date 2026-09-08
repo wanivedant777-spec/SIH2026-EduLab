@@ -346,14 +346,37 @@ We chose **detect and inform**, not **punish automatically**:
    - Seed is derived server-side via `SHA-256(student_id::practical_id::case_idx)`.
    - Produces reproducible inputs for the same student across re-attempts.
    - Generates distinct, high-entropy test vectors for different students on the same practical.
-2. **Ground-Truth Algorithmic Solvers**:
-   - Covers all 10 canonical practicals in CS201P (Linked Lists, Stack/Parentheses, Circular Queue, BST, AVL Tree, Graph BFS, Dijkstra Shortest Path, Kruskal MST, Hash Table with Linear Probing, Sorting Benchmarks).
-   - Expected outputs are computed on the fly by reference solvers — never hardcoded dummy strings.
-3. **Zero-Leakage Privacy**:
+2. **Multi-Factor Canonical Practical Resolution**:
+   - Practicals are resolved by canonical ID slugs, title semantics, and subject code rather than `practical_number` alone.
+   - Safely disambiguates duplicate practical numbers across seed revisions (e.g. `practical_number=1` as Linked List vs BST vs Array Max).
+   - If an evaluation request specifies an unmapped or unknown practical, the engine raises an explicit `HTTP 422 Unprocessable Entity` error rather than silently defaulting to Practical 01 or 10.
+3. **Ground-Truth Algorithmic Solvers**:
+   - Covers all 10 canonical practicals in CS201P (and recognized syllabus variants).
+   - Expected outputs are computed dynamically by reference solvers — never hardcoded dummy strings.
+4. **Zero-Leakage Privacy**:
    - Pre-execution: Student APIs and database RLS policies only expose `is_sample = true` public test cases.
    - Post-execution: Hidden parameterized test case inputs and expected outputs are redacted from response payloads, preventing extraction via browser network devtools while providing truthful pass/fail badges, telemetry, and marks.
-4. **Copy-Paste Defeat**:
+5. **Copy-Paste Defeat**:
    - A student submitting hardcoded `if input == sample: print(...)` logic passes public sample cases but fails the per-student parameterized hidden cases. Classmate solution swapping fails immediately.
+
+### 📚 Canonical CS201P Syllabus & Parameterized Test Registry
+
+| Practical | Canonical Title | Algorithmic Topic | Generator Contract |
+| :--- | :--- | :--- | :--- |
+| **P01** | Singly Linked List Implementation & Operations | Linear Structures | Dynamic list traversal (`N` elements) |
+| **P01 (Var)** | Find the Largest Number in an Array | Array Scans | Running maximum invariant (`max(arr)`) |
+| **P02** | Stack Implementation & Balanced Parentheses | Stacks & Parsing | Bracket validation (`VALID` / `INVALID`) |
+| **P02 (Var)** | Implement Stack Using Array | Array Stacks | `PUSH`, `POP`, `PEEK` with underflow/overflow |
+| **P03** | Circular Queue & Priority Queue Scheduling | FIFO Buffers | Queue operations with modular wrap-around |
+| **P04** | Binary Search Tree (BST) Insertion & Inorder | Trees & Invariants | BST insertion and strictly sorted inorder |
+| **P05** | AVL Tree: Height-Balanced Binary Search Tree | Self-Balancing Trees | LL/RR/LR/RL rotations with balance factor in [-1, 0, 1] |
+| **P06** | Graph Traversal: BFS & DFS | Graph Search | Queue-based BFS starting at vertex 0 |
+| **P07** | Dijkstra Algorithm: Single-Source Shortest Path | Greedy Algorithms | Non-negative weighted shortest paths from source 0 |
+| **P08** | Minimum Spanning Tree (MST): Kruskal & Prim | Greedy & Disjoint Sets | Kruskal's DSU total spanning tree weight |
+| **P09** | Hash Table with Open Addressing & Collision | Hashing & Probing | Modulo hashing with sequential linear probing |
+| **P10** | Empirical Complexity Analysis: QuickSort vs MergeSort | Divide & Conquer | O(N log N) sorted benchmark output |
+
+> **Fail-Fast Integrity**: If an evaluation request specifies an unrecognized practical ID or title, the backend returns an explicit `HTTP 422 Unprocessable Entity` with diagnostic error details instead of silently running a mismatched generator.
 
 ---
 

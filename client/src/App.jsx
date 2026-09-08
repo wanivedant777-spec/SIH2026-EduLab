@@ -279,6 +279,8 @@ export default function App() {
       student_id: currentUser?.id || currentUser?.identifier || 'unassigned',
       practical_id: currentPractical.id,
       practical_number: currentPractical.practicalNumber,
+      practical_title: currentPractical.title,
+      subject_code: currentPractical.courseCode?.split(':')[0]?.trim() || 'CS201P',
       language_id: languageMap[language] || 54,
       source_code: code,
       attempt_count: 1,

@@ -16,9 +16,10 @@ import random
 
 from parameterized_tests import (
     generate_parameterized_test_cases,
-    resolve_practical_number,
-    GENERATOR_MAP,
-    generate_p10_sorting_benchmark,
+    resolve_canonical_practical,
+    CANONICAL_CS201P_CATALOG,
+    CANONICAL_GENERATOR_REGISTRY,
+    UnsupportedPracticalError,
 )
 
 from dotenv import load_dotenv
@@ -82,6 +83,8 @@ class EvaluationRequest(BaseModel):
     student_id: str = Field(..., description="Student ID or institutional identifier")
     practical_id: str = Field(..., description="Practical ID or code")
     practical_number: Optional[int] = Field(default=None, description="Optional canonical practical number (1-10)")
+    practical_title: Optional[str] = Field(default=None, description="Optional practical title for exact disambiguation")
+    subject_code: Optional[str] = Field(default=None, description="Optional subject code (e.g. CS201P)")
     language_id: int = Field(..., description="Judge0 language ID: 54=C++, 71=Python, 62=Java, 50=C")
     source_code: str = Field(..., description="Student code submission")
     test_cases: List[TestCase] = Field(default_factory=list)
@@ -539,18 +542,31 @@ def evaluate_submission(
             detail="Source code cannot be empty.",
         )
 
+    # Resolve canonical practical via multi-factor matching (ID + title + subject)
+    try:
+        practical_info = resolve_canonical_practical(
+            practical_id=payload.practical_id,
+            practical_title=payload.practical_title,
+            practical_number=payload.practical_number,
+            subject_code=payload.subject_code,
+        )
+    except UnsupportedPracticalError as err:
+        logger.error("Unsupported practical in evaluate_submission: %s", err)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(err),
+        )
+
     # 1. Resolve canonical sample test cases
     sample_cases = [tc for tc in payload.test_cases if tc.is_sample]
     if not sample_cases and payload.test_cases:
         # If no cases explicitly tagged is_sample, preserve existing passed cases
         sample_cases = payload.test_cases
 
-    p_num = resolve_practical_number(payload.practical_id, payload.practical_number)
-
     # If absolutely no test cases supplied by client, generate canonical sample
     if not sample_cases:
-        sample_rng = random.Random(42 + p_num)
-        gen_func = GENERATOR_MAP.get(p_num, generate_p10_sorting_benchmark)
+        sample_rng = random.Random(42 + practical_info.practical_number)
+        gen_func = CANONICAL_GENERATOR_REGISTRY[practical_info.canonical_key]
         s_in, s_out = gen_func(sample_rng, is_edge_case=False)
         sample_cases = [TestCase(input_data=s_in, expected_output=s_out, is_sample=True, is_parameterized=False)]
 
@@ -558,7 +574,9 @@ def evaluate_submission(
     param_hidden_cases = generate_parameterized_test_cases(
         student_id=payload.student_id,
         practical_id=payload.practical_id,
-        practical_number=p_num,
+        practical_title=payload.practical_title,
+        practical_number=payload.practical_number,
+        subject_code=payload.subject_code,
         count=2,
     )
 
@@ -692,18 +710,24 @@ def evaluate_submission(
 
 
 @app.get("/api/practicals/{practical_id}/sample-cases", tags=["Curriculum"])
-def get_sample_test_cases(practical_id: str):
+def get_sample_test_cases(practical_id: str, title: Optional[str] = None):
     """
     Public student-facing endpoint returning only visible sample test cases.
     Parameterized hidden test cases are never returned by this endpoint.
     """
-    p_num = resolve_practical_number(practical_id)
-    sample_rng = random.Random(42 + p_num)
-    gen_func = GENERATOR_MAP.get(p_num, generate_p10_sorting_benchmark)
+    try:
+        practical_info = resolve_canonical_practical(practical_id=practical_id, practical_title=title)
+    except UnsupportedPracticalError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
+
+    sample_rng = random.Random(42 + practical_info.practical_number)
+    gen_func = CANONICAL_GENERATOR_REGISTRY[practical_info.canonical_key]
     s_in, s_out = gen_func(sample_rng, is_edge_case=False)
     return {
         "practical_id": practical_id,
-        "practical_number": p_num,
+        "practical_number": practical_info.practical_number,
+        "canonical_key": practical_info.canonical_key,
+        "title": practical_info.title,
         "sample_cases": [
             {
                 "input_data": s_in,
@@ -713,6 +737,27 @@ def get_sample_test_cases(practical_id: str):
             }
         ],
         "parameterized_cases_hidden": True,
+    }
+
+
+@app.get("/api/practicals/catalog", tags=["Curriculum"])
+def get_canonical_catalog():
+    """
+    Returns the complete canonical CS201P practical catalog and registered generator metadata.
+    """
+    return {
+        "subject": "CS201P: Data Structures & Algorithms",
+        "total_canonical_practicals": len(CANONICAL_CS201P_CATALOG),
+        "catalog": [
+            {
+                "canonical_key": info.canonical_key,
+                "practical_number": info.practical_number,
+                "title": info.title,
+                "aim": info.aim,
+                "has_generator": info.canonical_key in CANONICAL_GENERATOR_REGISTRY,
+            }
+            for info in CANONICAL_CS201P_CATALOG.values()
+        ],
     }
 
 
