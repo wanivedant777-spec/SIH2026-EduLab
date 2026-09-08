@@ -382,11 +382,9 @@ def execute_via_judge0(payload: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as exc:
         logger.error("Unexpected Judge0 error: %s", exc)
 
-    # Truthful local execution
-    return execute_locally(
-        language_id=payload.get("language_id", 54),
-        source_code=payload.get("source_code", ""),
-        stdin=payload.get("stdin", "")
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Judge0 execution service is unavailable. Code was not executed."
     )
 
 
@@ -779,121 +777,6 @@ def institutional_login(req: AuthLoginRequest):
             "batchName": batch_name,
             "status": "active"
         }
-    }
-
-
-class DemoLoginRequest(BaseModel):
-    role: str = Field(..., description="Target demo persona: 'student' or 'faculty'")
-
-
-@app.post("/api/auth/demo-login", tags=["Authentication"])
-def demo_login(req: DemoLoginRequest):
-    """
-    Dedicated demo login endpoint for hackathon evaluators.
-    Only enabled when ENABLE_DEMO_LOGIN=true is configured server-side.
-    Returns a real Supabase session and verified profile for seeded demo accounts
-    without exposing credentials to the client bundle.
-    """
-    enable_demo = os.getenv("ENABLE_DEMO_LOGIN", "false").strip().lower() in ("true", "1", "yes")
-    if not enable_demo:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo login is disabled in this environment."
-        )
-
-    target_role = req.role.strip().lower()
-    if target_role not in ("student", "faculty"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be either 'student' or 'faculty'."
-        )
-
-    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
-    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
-    if not supabase_url or not service_key:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase credentials not configured on backend."
-        )
-
-    # Server-stored credentials - NEVER exposed to the client bundle
-    demo_credentials = {
-        "student": {
-            "email": os.getenv("DEMO_STUDENT_EMAIL", "student001@college.edu"),
-            "password": os.getenv("DEMO_STUDENT_PASSWORD", ""),
-            "identifier": "GHR2025AI001",
-        },
-        "faculty": {
-            "email": os.getenv("DEMO_FACULTY_EMAIL", "faculty001@college.edu"),
-            "password": os.getenv("DEMO_FACULTY_PASSWORD", ""),
-            "identifier": "FAC001",
-        }
-    }
-
-    creds = demo_credentials[target_role]
-    if not creds["password"]:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Demo credentials for {target_role} are not configured in environment."
-        )
-    token_url = f"{supabase_url}/auth/v1/token?grant_type=password"
-
-    try:
-        login_res = requests.post(
-            token_url,
-            headers={"apikey": service_key, "Content-Type": "application/json"},
-            json={"email": creds["email"], "password": creds["password"]},
-            timeout=10
-        )
-        if login_res.status_code != 200:
-            logger.error("Demo login failed for %s: %s", target_role, login_res.text)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Unable to authenticate demo {target_role} account."
-            )
-        session_data = login_res.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Demo login request failed: %s", e)
-        raise HTTPException(status_code=500, detail="Demo authentication service error.")
-
-    user_id = session_data.get("user", {}).get("id")
-    user_token = session_data.get("access_token", service_key)
-    admin_headers = {
-        "apikey": service_key,
-        "Authorization": f"Bearer {user_token}",
-        "Content-Type": "application/json"
-    }
-
-    # Retrieve verified profile
-    prof_url = f"{supabase_url}/rest/v1/profiles?email=eq.{creds['email']}&select=*,batches(name)"
-    profile_data = {
-        "id": user_id,
-        "email": creds["email"],
-        "identifier": creds["identifier"],
-        "name": "Student 001" if target_role == "student" else "Faculty One",
-        "role": target_role,
-        "batchName": "C1" if target_role == "student" else "All Allocated Batches",
-        "status": "active"
-    }
-    try:
-        prof_res = requests.get(prof_url, headers=admin_headers, timeout=5)
-        if prof_res.status_code == 200 and prof_res.json():
-            p = prof_res.json()[0]
-            profile_data["id"] = p.get("id") or user_id
-            profile_data["name"] = p.get("full_name") or profile_data["name"]
-            profile_data["identifier"] = p.get("identifier") or creds["identifier"]
-            profile_data["role"] = p.get("role") or target_role
-            if isinstance(p.get("batches"), dict):
-                profile_data["batchName"] = p["batches"].get("name", profile_data["batchName"])
-    except Exception as e:
-        logger.warning("Could not fetch extended profile for demo account: %s", e)
-
-    return {
-        "status": "success",
-        "session": session_data,
-        "profile": profile_data
     }
 
 
