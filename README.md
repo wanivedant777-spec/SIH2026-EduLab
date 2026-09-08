@@ -268,6 +268,17 @@ If running on a machine without Docker:
 
 ---
 
+### 🛡️ Security Architecture & Container Privileges
+
+- **Environment-Driven Secrets**: All secrets (PostgreSQL, Redis, Supabase, Judge0) are injected via environment variables defined in `.env` (kept outside Git). No default passwords are baked into `docker-compose.yml` or `judge0.conf`.
+- **Why Judge0 Containers Require `privileged: true`**:
+  - Judge0 relies on [isolate](https://github.com/ioi/isolate) (the competitive programming sandbox) to safely execute student submissions.
+  - `isolate` requires direct Linux kernel facilities to create nested User, PID, and Mount namespaces, as well as managing cgroup memory and CPU limits (`/sys/fs/cgroup`).
+  - In containerized environments, creating these nested sandboxes requires `privileged: true` (or exhaustive host-level cgroup v2 mounting and system capabilities). Removing privileged mode results in `isolate: clone(): Operation not permitted` or cgroup access denial.
+  - **Defense in Depth**: Untrusted code does *not* run as root; `isolate` drops privileges to an isolated sandbox user. The database, Redis, and FastAPI containers run strictly unprivileged on a dedicated internal Docker network (`edulabs-net`).
+
+---
+
 ## 📝 Marks Distribution
 
 Matches the college's existing 10-mark practical structure — this isn't a hypothetical grading model, it's grounded in a real requirement.

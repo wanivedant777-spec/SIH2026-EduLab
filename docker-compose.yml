@@ -15,15 +15,18 @@ services:
     container_name: edulabs-judge0-db
     restart: always
     environment:
-      POSTGRES_DB: judge0
-      POSTGRES_USER: judge0
-      POSTGRES_PASSWORD: Judge0PostgresPass2026
+      POSTGRES_DB: ${POSTGRES_DB:-judge0}
+      POSTGRES_USER: ${POSTGRES_USER:-judge0}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - judge0-db-data:/var/lib/postgresql/data/
     networks:
       - edulabs-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U judge0 -d judge0"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-judge0} -d $${POSTGRES_DB:-judge0}"]
       interval: 5s
       timeout: 5s
       retries: 8
@@ -38,13 +41,16 @@ services:
     restart: always
     command: ["sh", "-c", "docker-entrypoint.sh --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
     environment:
-      REDIS_PASSWORD: Judge0RedisPass2026
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - judge0-redis-data:/data
     networks:
       - edulabs-net
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a Judge0RedisPass2026 ping | grep PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
       interval: 5s
       timeout: 5s
       retries: 8
@@ -52,6 +58,16 @@ services:
 
   # ============================================================================
   # 3. Judge0 CE Server (API)
+  #
+  # PRIVILEGED CONTAINER AUDIT NOTE:
+  # Judge0 mandates 'privileged: true' to support its underlying 'isolate' sandbox.
+  # 'isolate' requires direct Linux kernel access to construct unprivileged User,
+  # PID, and Mount/chroot namespaces, as well as managing cgroup limits under
+  # /sys/fs/cgroup. Inside the container, untrusted user code runs under a separate
+  # non-root 'isolate' sandbox account, not host root. Without privileged mode,
+  # containerized isolate fails with 'clone(): Operation not permitted' or cgroup
+  # initialization denial. Security is maintained by network isolation (edulabs-net)
+  # and restricted inter-service container exposure.
   # ============================================================================
   judge0-server:
     image: judge0/judge0:1.13.0
@@ -62,6 +78,18 @@ services:
       - ./judge0.conf:/judge0.conf:ro
     ports:
       - "2358:2358"
+    environment:
+      - REDIS_HOST=${REDIS_HOST:-judge0-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - POSTGRES_HOST=${POSTGRES_HOST:-judge0-db}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-judge0}
+      - POSTGRES_USER=${POSTGRES_USER:-judge0}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
+    env_file:
+      - path: .env
+        required: false
     networks:
       - edulabs-net
     depends_on:
@@ -78,6 +106,11 @@ services:
 
   # ============================================================================
   # 4. Judge0 Workers (Queue Consumer)
+  #
+  # PRIVILEGED CONTAINER AUDIT NOTE:
+  # Workers process submission jobs and directly execute compiler/isolate runs,
+  # requiring identical 'privileged: true' kernel capabilities for cgroup and
+  # namespace confinement.
   # ============================================================================
   judge0-workers:
     image: judge0/judge0:1.13.0
@@ -87,6 +120,18 @@ services:
     command: ["./scripts/workers"]
     volumes:
       - ./judge0.conf:/judge0.conf:ro
+    environment:
+      - REDIS_HOST=${REDIS_HOST:-judge0-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - POSTGRES_HOST=${POSTGRES_HOST:-judge0-db}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-judge0}
+      - POSTGRES_USER=${POSTGRES_USER:-judge0}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
+    env_file:
+      - path: .env
+        required: false
     networks:
       - edulabs-net
     depends_on:
@@ -98,7 +143,7 @@ services:
         condition: service_healthy
 
   # ============================================================================
-  # 5. FastAPI Evaluation Microservice
+  # 5. FastAPI Evaluation Microservice (Unprivileged)
   # ============================================================================
   server:
     build:
@@ -112,8 +157,8 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - JUDGE0_API_URL=http://judge0-server:2358
-      - JUDGE0_API_KEY=
-      - JUDGE0_API_HOST=
+      - JUDGE0_API_KEY=${JUDGE0_API_KEY:-}
+      - JUDGE0_API_HOST=${JUDGE0_API_HOST:-}
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
