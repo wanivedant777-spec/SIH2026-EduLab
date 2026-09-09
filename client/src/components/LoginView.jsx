@@ -172,12 +172,6 @@ export default function LoginView({ onLoginSuccess }) {
     }
   };
 
-  const handleDemoFill = (demoId, demoPwd) => {
-    setIdentifier(demoId);
-    setPassword(demoPwd);
-    handleAuth(null, demoId, demoPwd);
-  };
-
   return (
     <div className="login-container">
       {/* Background ambient glow */}
@@ -253,59 +247,6 @@ export default function LoginView({ onLoginSuccess }) {
             )}
           </button>
         </form>
-
-        {/* Quick Demo Access */}
-        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle, #E7E5DD)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted, #78716C)', textAlign: 'center' }}>
-            Quick Demo Sign-In
-          </span>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <button
-              type="button"
-              onClick={() => handleDemoFill('GHR2025AI001', 'StudentPassword@2026')}
-              disabled={loading}
-              style={{
-                background: 'var(--bg-canvas, #F9F9F6)',
-                border: '1px solid var(--border-medium, #D6D3D1)',
-                borderRadius: '6px',
-                padding: '8px 10px',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--text-primary, #1C1917)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <span>Demo Student</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDemoFill('FAC001', 'FacultyPassword@2026')}
-              disabled={loading}
-              style={{
-                background: 'var(--bg-canvas, #F9F9F6)',
-                border: '1px solid var(--border-medium, #D6D3D1)',
-                borderRadius: '6px',
-                padding: '8px 10px',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--text-primary, #1C1917)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <span>Demo Faculty</span>
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
