@@ -343,6 +343,46 @@ def test_expected_outputs_correct_across_all_canonical_practicals():
         actual_inorder = list(map(int, c.expected_output.split()))
         assert actual_inorder == expected_sorted
 
+    # Practical 4 Variant: Linear Search and Binary Search
+    p4_search_cases = generate_parameterized_test_cases(
+        student_id, "p4_search",
+        practical_title="Linear Search and Binary Search",
+        count=3
+    )
+    for c in p4_search_cases:
+        lines = c.input_data.strip().split("\n")
+        assert len(lines) == 3, f"Search test must have 3 lines (n, array, target), got {len(lines)}"
+        n = int(lines[0])
+        arr = list(map(int, lines[1].split()))
+        target = int(lines[2])
+        assert len(arr) == n, f"Array size mismatch: expected {n}, got {len(arr)}"
+
+        # Verify ground-truth: linear search on original array
+        linear_expected = -1
+        for i, v in enumerate(arr):
+            if v == target:
+                linear_expected = i
+                break
+
+        # Verify ground-truth: binary search on sorted array
+        sorted_arr = sorted(arr)
+        binary_expected = -1
+        lo, hi = 0, len(sorted_arr) - 1
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if sorted_arr[mid] == target:
+                binary_expected = mid
+                break
+            elif sorted_arr[mid] < target:
+                lo = mid + 1
+            else:
+                hi = mid - 1
+
+        out_lines = c.expected_output.strip().split("\n")
+        assert len(out_lines) == 2, f"Search output must have 2 lines, got {len(out_lines)}"
+        assert int(out_lines[0]) == linear_expected, f"Linear search mismatch: expected {linear_expected}, got {out_lines[0]}"
+        assert int(out_lines[1]) == binary_expected, f"Binary search mismatch: expected {binary_expected}, got {out_lines[1]}"
+
     # Practical 5: AVL Tree (sorted array of keys)
     p5_cases = generate_parameterized_test_cases(student_id, "p5", practical_title="AVL Tree Height-Balanced", count=2)
     for c in p5_cases:
@@ -515,3 +555,135 @@ def test_canonical_catalog_api_endpoint(auth_client):
     for p in data["catalog"]:
         assert p["has_generator"] is True
         assert len(p["title"]) > 0
+
+
+# ===========================================================================
+# 11. Search vs BST Disambiguation (Critical Safety Test)
+# ===========================================================================
+
+def test_search_vs_bst_disambiguation():
+    """
+    Requirement 11:
+    'Linear Search and Binary Search' must NEVER resolve to the BST generator.
+    'Binary Search Tree' must NEVER resolve to the search generator.
+    Both have practical_number=4, so number-only fallback would confuse them.
+    """
+    # --- Case A: Live Supabase practical title ---
+    p_search = resolve_canonical_practical(
+        practical_id="d38eea8d-1816-4f2b-8112-7b2ad09266b6",  # Real Supabase UUID
+        practical_title="Linear Search and Binary Search",
+        practical_number=4,
+        subject_code="CS201P",
+    )
+    assert p_search.canonical_key == "cs201p_p04_search"
+    assert "search" in p_search.canonical_key
+    assert "bst" not in p_search.canonical_key
+
+    # --- Case B: BST practical ---
+    p_bst = resolve_canonical_practical(
+        practical_id="some_bst_uuid",
+        practical_title="Binary Search Tree (BST) Insertion & Inorder Traversal",
+        practical_number=4,
+        subject_code="CS201P",
+    )
+    assert p_bst.canonical_key == "cs201p_p04_bst"
+    assert "bst" in p_bst.canonical_key
+    assert p_bst.canonical_key != p_search.canonical_key
+
+    # --- Case C: Various search title phrasings ---
+    for search_title in [
+        "Linear Search and Binary Search",
+        "Practical 04: Linear Search and Binary Search",
+        "linear search",
+        "Binary Search Implementation",  # no 'tree' => search algo
+        "Linear and Binary Search Algorithms",
+    ]:
+        result = resolve_canonical_practical(
+            practical_id="any_id",
+            practical_title=search_title,
+            practical_number=4,
+        )
+        assert result.canonical_key == "cs201p_p04_search", (
+            f"Title '{search_title}' should resolve to search, got {result.canonical_key}"
+        )
+
+    # --- Case D: Various BST title phrasings ---
+    for bst_title in [
+        "Binary Search Tree",
+        "BST Insertion",
+        "Practical 04: Binary Search Tree (BST) Insertion & Inorder Traversal",
+        "Binary Search Tree: Insertion & Inorder Traversal",
+    ]:
+        result = resolve_canonical_practical(
+            practical_id="any_id",
+            practical_title=bst_title,
+            practical_number=4,
+        )
+        assert result.canonical_key == "cs201p_p04_bst", (
+            f"Title '{bst_title}' should resolve to BST, got {result.canonical_key}"
+        )
+
+
+def test_search_generator_deterministic():
+    """
+    Requirement 12:
+    Same student + practical => same search test cases (deterministic).
+    Different students => different search test cases.
+    """
+    student_a = "std_search_deterministic_a"
+    student_b = "std_search_deterministic_b"
+    practical_id = "d38eea8d-1816-4f2b-8112-7b2ad09266b6"
+
+    # Deterministic: same student, same practical
+    run1 = generate_parameterized_test_cases(
+        student_a, practical_id,
+        practical_title="Linear Search and Binary Search",
+        practical_number=4, count=3
+    )
+    run2 = generate_parameterized_test_cases(
+        student_a, practical_id,
+        practical_title="Linear Search and Binary Search",
+        practical_number=4, count=3
+    )
+    for i in range(3):
+        assert run1[i].input_data == run2[i].input_data
+        assert run1[i].expected_output == run2[i].expected_output
+
+    # Diverse: different students
+    run_b = generate_parameterized_test_cases(
+        student_b, practical_id,
+        practical_title="Linear Search and Binary Search",
+        practical_number=4, count=3
+    )
+    assert run1[0].input_data != run_b[0].input_data, "Different students should get different inputs"
+
+
+def test_search_hidden_cases_no_bst_content():
+    """
+    Requirement 13:
+    Hidden test cases for 'Linear Search and Binary Search' must contain
+    NO BST, tree, recursion, or inorder content.
+    """
+    cases = generate_parameterized_test_cases(
+        "std_no_bst_check",
+        "search_prac_uuid",
+        practical_title="Linear Search and Binary Search",
+        practical_number=4,
+        count=5
+    )
+    for c in cases:
+        label = (c.test_case_label or "").lower()
+        # Label should reference search, not BST
+        assert "bst" not in label
+        assert "binary search tree" not in label
+        assert "inorder" not in label
+        assert "recursion" not in label
+
+        # Output must be exactly 2 lines (linear result, binary result)
+        out_lines = c.expected_output.strip().split("\n")
+        assert len(out_lines) == 2, f"Expected 2 output lines, got {len(out_lines)}: {c.expected_output}"
+
+        # Each line must be a valid integer (index or -1)
+        for line in out_lines:
+            val = int(line.strip())
+            assert val >= -1, f"Search result must be >= -1, got {val}"

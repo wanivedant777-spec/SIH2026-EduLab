@@ -94,6 +94,13 @@ CANONICAL_CS201P_CATALOG: Dict[str, CanonicalPracticalInfo] = {
         subject_code="CS201P",
         aim="Implement a BST, perform element insertion maintaining BST invariant, and verify sorted output via Inorder Traversal.",
     ),
+    "cs201p_p04_search": CanonicalPracticalInfo(
+        canonical_key="cs201p_p04_search",
+        practical_number=4,
+        title="Practical 04: Linear Search and Binary Search",
+        subject_code="CS201P",
+        aim="Implement Linear Search (unsorted traversal) and Binary Search (sorted divide-and-conquer) and compare their correctness on given arrays.",
+    ),
     "cs201p_p05_avl": CanonicalPracticalInfo(
         canonical_key="cs201p_p05_avl",
         practical_number=5,
@@ -186,6 +193,16 @@ def resolve_canonical_practical(
     # AVL Tree (must precede generic BST because AVL is a self-balancing binary search tree)
     if "avl" in combined_text or "rotation" in combined_text or "height-balanced" in combined_text or "height balanced" in combined_text:
         return CANONICAL_CS201P_CATALOG["cs201p_p05_avl"]
+
+    # Linear Search and/or Binary Search (the ALGORITHM, not the tree)
+    # Must precede BST check: "binary search" is a substring of "binary search tree"
+    _is_search_algo = (
+        "linear search" in combined_text
+        or "linear and binary" in combined_text
+        or ("binary search" in combined_text and "tree" not in combined_text and "bst" not in combined_text)
+    )
+    if _is_search_algo:
+        return CANONICAL_CS201P_CATALOG["cs201p_p04_search"]
 
     # BST (Binary Search Tree)
     if "binary search tree" in combined_text or "bst" in combined_text:
@@ -402,6 +419,86 @@ def generate_p4_bst_inorder(rng: random.Random, is_edge_case: bool = False) -> T
     return input_data, expected_output
 
 
+def generate_p4_linear_binary_search(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
+    """
+    Practical 04 Variant: Linear Search and Binary Search
+
+    Input contract:
+      Line 1: n (array size)
+      Line 2: n space-separated integers (the array)
+      Line 3: target value to search for
+
+    Output contract:
+      Line 1: Linear search result — 0-based index of first occurrence, or -1
+      Line 2: Binary search result on the SORTED version of the array — 0-based index, or -1
+
+    The program should:
+      1. Perform linear search on the ORIGINAL (unsorted) array.
+      2. Sort the array.
+      3. Perform binary search on the SORTED array.
+    """
+    if is_edge_case:
+        # Edge cases: single element, duplicates, target at boundaries
+        edge_type = rng.choice(["single_found", "single_not_found", "duplicates", "first", "last"])
+        if edge_type == "single_found":
+            val = rng.randint(-50, 50)
+            arr = [val]
+            target = val
+        elif edge_type == "single_not_found":
+            val = rng.randint(-50, 50)
+            arr = [val]
+            target = val + rng.choice([-1, 1])  # guaranteed different
+        elif edge_type == "duplicates":
+            base = rng.randint(1, 20)
+            n = rng.randint(4, 7)
+            arr = [base] * n
+            # Insert a few distinct values
+            for i in range(min(2, n)):
+                arr[rng.randint(0, n - 1)] = rng.randint(1, 50)
+            target = rng.choice(arr)  # guaranteed present
+        elif edge_type == "first":
+            n = rng.randint(4, 7)
+            arr = sorted([rng.randint(1, 100) for _ in range(n)])
+            target = arr[0]
+        else:  # last
+            n = rng.randint(4, 7)
+            arr = sorted([rng.randint(1, 100) for _ in range(n)])
+            target = arr[-1]
+    else:
+        n = rng.randint(5, 10)
+        arr = [rng.randint(-50, 200) for _ in range(n)]
+        # 60% chance target is in array, 40% chance it's not
+        if rng.random() < 0.6:
+            target = rng.choice(arr)
+        else:
+            target = rng.randint(-100, 300)
+
+    # Ground-truth: Linear search on original array
+    linear_result = -1
+    for i, v in enumerate(arr):
+        if v == target:
+            linear_result = i
+            break
+
+    # Ground-truth: Binary search on sorted array
+    sorted_arr = sorted(arr)
+    binary_result = -1
+    lo, hi = 0, len(sorted_arr) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if sorted_arr[mid] == target:
+            binary_result = mid
+            break
+        elif sorted_arr[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    input_data = f"{len(arr)}\n{' '.join(map(str, arr))}\n{target}"
+    expected_output = f"{linear_result}\n{binary_result}"
+    return input_data, expected_output
+
+
 def generate_p5_avl_tree(rng: random.Random, is_edge_case: bool = False) -> Tuple[str, str]:
     """Practical 05: AVL Tree (Height-Balanced BST)"""
     n = rng.choice([2, 3]) if is_edge_case else rng.randint(5, 9)
@@ -601,6 +698,7 @@ CANONICAL_GENERATOR_REGISTRY: Dict[str, Callable[[random.Random, bool], Tuple[st
     "cs201p_p02_array_stack": generate_p2_array_stack,
     "cs201p_p03_circular_queue": generate_p3_circular_queue,
     "cs201p_p04_bst": generate_p4_bst_inorder,
+    "cs201p_p04_search": generate_p4_linear_binary_search,
     "cs201p_p05_avl": generate_p5_avl_tree,
     "cs201p_p06_graph_bfs": generate_p6_graph_bfs,
     "cs201p_p07_dijkstra": generate_p7_dijkstra,
