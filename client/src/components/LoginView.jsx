@@ -9,13 +9,25 @@ export default function LoginView({ onLoginSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
-  const handleAuth = async (e) => {
-    e.preventDefault();
+  const handleAuth = async (e, customId = null, customPassword = null) => {
+    if (e) e.preventDefault();
     setErrorMsg('');
     setInfoMsg('');
 
-    const cleanId = identifier.trim().toUpperCase();
-    if (!cleanId || !password) {
+    const targetId = customId || identifier;
+    const targetPwd = customPassword || password;
+
+    let cleanId = targetId.trim().toUpperCase();
+    // Resolve common user entry variations:
+    if (/^GHR2025\d{3}$/.test(cleanId)) {
+      cleanId = cleanId.replace(/^GHR2025(\d{3})$/, 'GHR2025AI$1');
+    } else if (['STUDENT001', 'STUDENT_001', 'STUDENT', 'STUDENT1'].includes(cleanId)) {
+      cleanId = 'GHR2025AI001';
+    } else if (['FACULTY001', 'FACULTY_001', 'FACULTY', 'FACULTY1'].includes(cleanId)) {
+      cleanId = 'FAC001';
+    }
+
+    if (!cleanId || !targetPwd) {
       setErrorMsg('Please enter both your Institutional ID and Password.');
       return;
     }
@@ -30,7 +42,7 @@ export default function LoginView({ onLoginSuccess }) {
         const backendRes = await fetch(`${apiUrl}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: cleanId, password }),
+          body: JSON.stringify({ identifier: cleanId, password: targetPwd }),
         });
 
         if (backendRes.ok) {
@@ -71,26 +83,48 @@ export default function LoginView({ onLoginSuccess }) {
       if (authSucceeded) return;
 
       // 2. Direct Supabase Fallback:
-      // Lookup the identifier in the institutional database via RPC
-      const { data: rosterUser, error: rpcError } = await supabase
-        .rpc('lookup_user_by_identifier', { p_identifier: cleanId });
+      let targetEmail = null;
+      let targetRole = null;
 
-      if (rpcError || !rosterUser || rosterUser.length === 0) {
+      // Try RPC first if available
+      try {
+        const { data: rosterUser } = await supabase
+          .rpc('lookup_user_by_identifier', { p_identifier: cleanId });
+        if (rosterUser && rosterUser.length > 0) {
+          targetEmail = rosterUser[0].email;
+          targetRole = rosterUser[0].role;
+        }
+      } catch {
+        // RPC might not be present, fallback to deterministic mapping
+      }
+
+      // If RPC did not find or failed, map canonical institutional IDs
+      if (!targetEmail) {
+        if (cleanId.includes('@')) {
+          targetEmail = cleanId.toLowerCase();
+        } else if (cleanId.startsWith('GHR2025AI')) {
+          const num = cleanId.replace(/^GHR2025AI(\d+)$/, '$1');
+          targetEmail = `student${num}@college.edu`;
+          targetRole = 'student';
+        } else if (cleanId.startsWith('FAC')) {
+          const num = cleanId.replace(/^FAC(\d+)$/, '$1');
+          targetEmail = `faculty${num}@college.edu`;
+          targetRole = 'faculty';
+        }
+      }
+
+      if (!targetEmail) {
         throw new Error('Institutional ID not recognized in college database. Access denied.');
       }
 
-      const rosterEntry = rosterUser[0];
-      const targetEmail = rosterEntry.email;
-      const rosterRole = rosterEntry.role;
-
-      if (!rosterRole || !['student', 'faculty'].includes(rosterRole)) {
+      if (targetRole && !['student', 'faculty'].includes(targetRole)) {
         throw new Error('Account has an unrecognized or unauthorized role. Access denied.');
       }
 
       // 3. Authenticate against Supabase Auth (Normal login must NOT create users)
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: targetEmail,
-        password: password,
+        password: targetPwd,
       });
 
       if (authError) {
@@ -136,6 +170,12 @@ export default function LoginView({ onLoginSuccess }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDemoFill = (demoId, demoPwd) => {
+    setIdentifier(demoId);
+    setPassword(demoPwd);
+    handleAuth(null, demoId, demoPwd);
   };
 
   return (
@@ -213,6 +253,59 @@ export default function LoginView({ onLoginSuccess }) {
             )}
           </button>
         </form>
+
+        {/* Quick Demo Access */}
+        <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle, #E7E5DD)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted, #78716C)', textAlign: 'center' }}>
+            Quick Demo Sign-In
+          </span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => handleDemoFill('GHR2025AI001', 'StudentPassword@2026')}
+              disabled={loading}
+              style={{
+                background: 'var(--bg-canvas, #F9F9F6)',
+                border: '1px solid var(--border-medium, #D6D3D1)',
+                borderRadius: '6px',
+                padding: '8px 10px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text-primary, #1C1917)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span>Demo Student</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDemoFill('FAC001', 'FacultyPassword@2026')}
+              disabled={loading}
+              style={{
+                background: 'var(--bg-canvas, #F9F9F6)',
+                border: '1px solid var(--border-medium, #D6D3D1)',
+                borderRadius: '6px',
+                padding: '8px 10px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text-primary, #1C1917)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span>Demo Faculty</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

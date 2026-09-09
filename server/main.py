@@ -4,6 +4,7 @@ FastAPI Backend Service: Code Evaluation, Judge0 Payload Structuring & Adaptive 
 """
 
 import os
+import re
 import sys
 import uuid
 import logging
@@ -960,6 +961,8 @@ def institutional_login(req: AuthLoginRequest):
         resolved_id = "GHR2025AI001"
     elif clean_id in ("FACULTY001", "FACULTY_001", "FACULTY", "FACULTY1"):
         resolved_id = "FAC001"
+    elif re.match(r"^GHR2025(\d{3})$", clean_id):
+        resolved_id = re.sub(r"^GHR2025(\d{3})$", r"GHR2025AI\1", clean_id)
 
     roster_url = f"{supabase_url}/rest/v1/institutional_roster?or=(identifier.eq.{resolved_id},identifier.eq.{clean_id},email.eq.{clean_id.lower()})&select=*,batches(name),departments(name)"
     try:
