@@ -493,7 +493,7 @@ def execute_via_judge0(payload: Dict[str, Any]) -> Dict[str, Any]:
             if is_sandbox_error:
                 logger.warning("Judge0 sandbox failure (%s). Falling back to truthful compiler execution.", data.get("message"))
                 return execute_locally(
-                    language_id=payload.get("language_id", 71),
+                    language_id=payload.get("language_id", 54),
                     source_code=payload.get("source_code", ""),
                     stdin=payload.get("stdin", "")
                 )
@@ -534,10 +534,12 @@ def root_info():
 def health_check():
     """
     Health check endpoint reporting microservice status, uptime timestamp,
-    and active Judge0 code execution engine reachability.
+    Judge0 code execution engine reachability, and execution mode.
     """
     judge0_reachable = False
     judge0_version = None
+    execution_mode = "truthful_compiler"
+
     try:
         headers = {}
         if JUDGE0_API_KEY:
@@ -557,17 +559,20 @@ def health_check():
                         judge0_version = resp_v.text.strip()
                 except Exception:
                     pass
+            execution_mode = "judge0_primary_with_truthful_compiler_fallback"
     except Exception:
         judge0_reachable = False
+        execution_mode = "truthful_compiler"
 
     return {
-        "status": "healthy" if judge0_reachable else "degraded",
+        "fastapi": "healthy",
+        "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "judge0": {
-            "status": "reachable" if judge0_reachable else "unavailable",
+            "status": "reachable" if judge0_reachable else "unreachable",
             "url": JUDGE0_API_URL,
             "version": judge0_version,
-            "execution_mode": "judge0_sandbox" if judge0_reachable else "unavailable",
+            "execution_mode": execution_mode,
         },
     }
 

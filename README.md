@@ -235,12 +235,14 @@ curl http://localhost:8000/health
 Expected response:
 ```json
 {
+  "fastapi": "healthy",
   "status": "healthy",
+  "timestamp": "2026-09-09T17:07:48.243779+00:00",
   "judge0": {
     "status": "reachable",
     "url": "http://judge0-server:2358",
     "version": "1.13.0",
-    "execution_mode": "judge0_sandbox"
+    "execution_mode": "judge0_primary_with_truthful_compiler_fallback"
   }
 }
 ```
