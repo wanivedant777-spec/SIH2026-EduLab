@@ -9,6 +9,7 @@ export default function CodeEditor({
   onCodeChange,
   onResetCode,
   isAutoSaving = false,
+  showToolbar = false,
 }) {
   const handleEditorChange = (value) => {
     onCodeChange(value || '');
@@ -23,47 +24,49 @@ export default function CodeEditor({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Editor Toolbar */}
-      <div className="editor-toolbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
-            <Code2 size={16} />
+      {/* Editor Toolbar (Optional when integrated into workbench topbar) */}
+      {showToolbar && (
+        <div className="editor-toolbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent)' }}>
+              <Code2 size={16} />
+            </div>
+
+            <select
+              value={language}
+              onChange={(e) => onLanguageChange(e.target.value)}
+              className="editor-lang-select"
+            >
+              <option value="cpp">C++20 (GCC 14 · Judge0 ID 54)</option>
+              <option value="c">C (GCC 14 · Judge0 ID 50)</option>
+              <option value="python">Python 3.12 (Judge0 ID 71)</option>
+              <option value="java">Java 21 (Judge0 ID 62)</option>
+            </select>
           </div>
 
-          <select
-            value={language}
-            onChange={(e) => onLanguageChange(e.target.value)}
-            className="editor-lang-select"
-          >
-            <option value="cpp">C++20 (GCC 14 · Judge0 ID 54)</option>
-            <option value="c">C (GCC 14 · Judge0 ID 50)</option>
-            <option value="python">Python 3.12 (Judge0 ID 71)</option>
-            <option value="java">Java 21 (Judge0 ID 62)</option>
-          </select>
-        </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              className="editor-autosave-indicator"
+              title={isAutoSaving ? 'Auto-saving changes...' : 'Continuous Auto-save Active'}
+            >
+              <ShieldCheck size={14} color="var(--success)" />
+              <span className="editor-autosave-text">
+                {isAutoSaving ? 'Auto-saving...' : 'Continuous Auto-save'}
+              </span>
+            </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div
-            className="editor-autosave-indicator"
-            title={isAutoSaving ? 'Auto-saving changes...' : 'Continuous Auto-save Active'}
-          >
-            <ShieldCheck size={14} color="var(--success)" />
-            <span className="editor-autosave-text">
-              {isAutoSaving ? 'Auto-saving...' : 'Continuous Auto-save'}
-            </span>
+            <Button
+              variant="glass"
+              size="sm"
+              icon={RotateCcw}
+              onClick={onResetCode}
+              title="Reset code editor to starter template"
+            >
+              <span className="btn-text-full">Reset</span>
+            </Button>
           </div>
-
-          <Button
-            variant="glass"
-            size="sm"
-            icon={RotateCcw}
-            onClick={onResetCode}
-            title="Reset code editor to starter template"
-          >
-            <span className="btn-text-full">Reset</span>
-          </Button>
         </div>
-      </div>
+      )}
 
       {/* Monaco Editor Surface */}
       <div className="editor-surface">

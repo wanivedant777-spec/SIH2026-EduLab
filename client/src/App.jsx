@@ -656,6 +656,11 @@ export default function App() {
             stdoutMessage={stdoutMessage}
             isAutoSaving={isAutoSaving}
             onRunCode={handleRunCode}
+            onSubmitPractical={handleSubmitPractical}
+            isSubmitted={isSubmitted}
+            onNavigate={handleNavigate}
+            currentUser={currentUser}
+            onSelectPractical={handleSelectPractical}
           />
         ) : activeNav === 'submissions' ? (
           <StudentSubmissionsView

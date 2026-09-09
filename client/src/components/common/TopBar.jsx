@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Menu,
-  Play,
-  Send,
   Clock,
   BookOpen,
-  CheckCircle,
   Download,
   LogOut,
 } from 'lucide-react';
@@ -22,11 +19,11 @@ export default function TopBar({
   currentPractical,
   onOpenPracticalModal,
   onOpenAuditDrawer,
-  onRunCode,
-  onSubmitPractical,
+  _onRunCode,
+  _onSubmitPractical,
   onExportGradebook,
-  isRunning = false,
-  isSubmitted = false,
+  _isRunning = false,
+  _isSubmitted = false,
   onLogout,
   breadcrumbs = [],
 }) {
@@ -134,31 +131,7 @@ export default function TopBar({
 
       {/* Right: Action Buttons & User Status */}
       <div className="topbar-right">
-        {/* Workspace specific action buttons */}
-        {isStudent && activeNav === 'workspace' && (
-          <div className="topbar-workspace-actions">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={Play}
-              onClick={onRunCode}
-              loading={isRunning}
-              disabled={isRunning}
-            >
-              {isRunning ? 'Running...' : 'Run Code'}
-            </Button>
-
-            <Button
-              variant={isSubmitted ? 'outline' : 'primary'}
-              size="sm"
-              icon={isSubmitted ? CheckCircle : Send}
-              onClick={onSubmitPractical}
-              disabled={isRunning || isSubmitted}
-            >
-              {isSubmitted ? 'Submitted' : 'Submit Practical'}
-            </Button>
-          </div>
-        )}
+        {/* Workspace actions are integrated directly into the Code Lab workbench top bar */}
 
         {/* Faculty specific action button */}
         {!isStudent && onExportGradebook && (
