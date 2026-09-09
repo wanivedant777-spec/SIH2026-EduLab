@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { Code2, RotateCcw, ShieldCheck } from 'lucide-react';
 import Button from '../ui/Button';
@@ -11,8 +12,14 @@ export default function CodeEditor({
   isAutoSaving = false,
   showToolbar = false,
 }) {
+  const editorRef = useRef(null);
+
   const handleEditorChange = (value) => {
-    onCodeChange(value || '');
+    onCodeChange(value ?? '');
+  };
+
+  const handleEditorDidMount = (editor) => {
+    editorRef.current = editor;
   };
 
   const getMonacoLanguage = (lang) => {
@@ -23,7 +30,17 @@ export default function CodeEditor({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        width: '100%',
+        position: 'relative',
+        minHeight: 0,
+        flex: 1,
+      }}
+    >
       {/* Editor Toolbar (Optional when integrated into workbench topbar) */}
       {showToolbar && (
         <div className="editor-toolbar">
@@ -69,20 +86,34 @@ export default function CodeEditor({
       )}
 
       {/* Monaco Editor Surface */}
-      <div className="editor-surface">
+      <div
+        className="editor-surface"
+        style={{
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          minHeight: 0,
+          flex: 1,
+          overflow: 'hidden',
+        }}
+      >
         <Editor
+          width="100%"
           height="100%"
           language={getMonacoLanguage(language)}
           value={code}
-          theme="vs"
+          theme="vs-dark"
           onChange={handleEditorChange}
+          onMount={handleEditorDidMount}
           options={{
+            readOnly: false,
+            domReadOnly: false,
+            automaticLayout: true,
             minimap: { enabled: false },
             fontSize: 13,
             fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
             lineNumbers: 'on',
             scrollBeyondLastLine: false,
-            automaticLayout: true,
             tabSize: 4,
             padding: { top: 12, bottom: 12 },
             bracketPairColorization: { enabled: true },
@@ -90,6 +121,8 @@ export default function CodeEditor({
             renderWhitespace: 'selection',
             smoothScrolling: true,
             cursorBlinking: 'smooth',
+            contextmenu: true,
+            accessibilitySupport: 'off',
           }}
         />
       </div>
