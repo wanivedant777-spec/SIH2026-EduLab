@@ -988,9 +988,6 @@
   .btn-text-compact {
     display: inline;
   }
-  .role-switcher-label {
-    display: none;
-  }
   .app-header {
     height: 50px;
     padding: 0 10px;

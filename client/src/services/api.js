@@ -100,18 +100,3 @@ export async function calculateTier(metrics) {
     };
   }
 }
-
-export async function loginDemoAccount(role) {
-  const res = await fetch(`${API_BASE_URL}/api/auth/demo-login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Demo login failed with status ${res.status}`);
-  }
-
-  return await res.json();
-}

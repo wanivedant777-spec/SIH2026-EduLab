@@ -10,7 +10,7 @@ import Modal from './components/ui/Modal';
 import Button from './components/ui/Button';
 import LoginView from './components/LoginView';
 import { supabase } from './supabaseClient';
-import { evaluateSubmission, loginDemoAccount } from './services/api';
+import { evaluateSubmission } from './services/api';
 import {
   getPracticals,
   getSubmissions,
@@ -29,8 +29,7 @@ export default function App() {
   const [studentProfile, setStudentProfile] = useState(null);
   const [facultyAllocations, setFacultyAllocations] = useState([]);
 
-  // Navigation & Role State
-  const [activeRole, setActiveRole] = useState('student'); // 'student' | 'faculty'
+  // Navigation State
   const [studentView, setStudentView] = useState('dashboard'); // 'dashboard' | 'workspace'
   const [practicals, setPracticals] = useState([]);
   const [currentPractical, setCurrentPractical] = useState(null);
@@ -83,7 +82,12 @@ export default function App() {
             .eq('id', session.user.id)
             .single();
 
-          const role = profile?.role || session.user.app_metadata?.role || 'student';
+          const role = profile?.role;
+          if (!role || !['student', 'faculty'].includes(role)) {
+            // Unknown or missing role — sign out immediately
+            await supabase.auth.signOut();
+            return;
+          }
           const userObj = {
             id: session.user.id,
             email: session.user.email,
@@ -94,7 +98,6 @@ export default function App() {
             status: profile?.status || 'active',
           };
           setCurrentUser(userObj);
-          setActiveRole(role === 'faculty' ? 'faculty' : 'student');
         }
       } catch (err) {
         console.warn('Session check note:', err);
@@ -108,7 +111,6 @@ export default function App() {
         setCurrentUser(null);
         setStudentProfile(null);
         setFacultyAllocations([]);
-        setActiveRole('student');
         setStudentView('dashboard');
         setPracticals([]);
         setSubmissions([]);
@@ -184,9 +186,6 @@ export default function App() {
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
-    if (user?.role) {
-      setActiveRole(user.role);
-    }
     setStudentView('dashboard');
     addToast(`Welcome, ${user.name || user.identifier || 'User'}! Authenticated via Supabase.`, 'success');
   };
@@ -200,7 +199,6 @@ export default function App() {
     setCurrentUser(null);
     setStudentProfile(null);
     setFacultyAllocations([]);
-    setActiveRole('student');
     setStudentView('dashboard');
     setPracticals([]);
     setSubmissions([]);
@@ -442,54 +440,6 @@ export default function App() {
 
   const batchMetrics = computeBatchMetrics(submissions);
 
-  // Seamless 1-click persona switcher for SIH live judging & evaluation
-  const handleRoleChange = async (targetRole) => {
-    if (!currentUser) return;
-
-    if (currentUser.role === targetRole) {
-      setActiveRole(targetRole);
-      return;
-    }
-
-    addToast(`Authenticating demo session for ${targetRole}...`, 'info');
-    setIsLoadingData(true);
-
-    try {
-      // Authenticate via server-side demo-login endpoint (no credentials in client bundle)
-      const resData = await loginDemoAccount(targetRole);
-
-      if (resData.session?.access_token) {
-        await supabase.auth.setSession({
-          access_token: resData.session.access_token,
-          refresh_token: resData.session.refresh_token,
-        });
-      }
-
-      const activeProfile = resData.profile;
-      const newUser = {
-        id: activeProfile.id,
-        email: activeProfile.email,
-        identifier: activeProfile.identifier,
-        name: activeProfile.name,
-        role: activeProfile.role,
-        batchName: activeProfile.batchName,
-        status: activeProfile.status || 'active',
-      };
-
-      setCurrentUser(newUser);
-      setActiveRole(targetRole);
-      if (targetRole === 'student') {
-        setStudentView('dashboard');
-      }
-      addToast(`Active Persona: ${newUser.name} · Loaded real Supabase data`, 'success');
-    } catch (err) {
-      console.warn('Persona switch notice:', err.message);
-      // If server demo-login is not configured, update local state
-      setActiveRole(targetRole);
-    } finally {
-      setIsLoadingData(false);
-    }
-  };
 
   const handleExportGradebook = () => {
     const subjectCode = facultyAllocations[0]?.subjects?.code || 'CS201P';
@@ -503,8 +453,6 @@ export default function App() {
       <Header
         currentUser={currentUser}
         onLogout={handleLogout}
-        activeRole={activeRole}
-        onRoleChange={handleRoleChange}
         studentView={studentView}
         onStudentViewChange={(view) => {
           setStudentView(view);
@@ -520,7 +468,7 @@ export default function App() {
       />
 
       {/* Main Experience: Student (Dashboard vs Workspace) vs Faculty Dashboard */}
-      {activeRole === 'student' ? (
+      {currentUser?.role === 'student' ? (
         studentView === 'dashboard' ? (
           <StudentDashboard
             currentUser={currentUser}

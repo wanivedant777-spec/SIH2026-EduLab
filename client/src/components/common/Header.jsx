@@ -2,14 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Play, Send, Clock, Award, BookOpen, CheckCircle, Download, LayoutDashboard, Code2, ArrowRight, LogOut } from 'lucide-react';
 import Button from '../ui/Button';
 import Badge from '../ui/Badge';
-import RoleSwitcher from './RoleSwitcher';
 import FocusTracker from './FocusTracker';
 
 export default function Header({
   currentUser,
   onLogout,
-  activeRole,
-  onRoleChange,
   studentView = 'dashboard',
   onStudentViewChange,
   currentPractical,
@@ -21,7 +18,7 @@ export default function Header({
   isRunning,
   isSubmitted,
 }) {
-
+  const isStudent = currentUser?.role === 'student';
   const [secondsElapsed, setSecondsElapsed] = useState(420);
 
   useEffect(() => {
@@ -44,7 +41,7 @@ export default function Header({
         <div
           className="brand-badge"
           onClick={() => {
-            if (activeRole === 'student' && onStudentViewChange) {
+            if (isStudent && onStudentViewChange) {
               onStudentViewChange('dashboard');
             }
           }}
@@ -55,7 +52,7 @@ export default function Header({
           <span className="brand-tag">v2.0</span>
         </div>
 
-        {activeRole === 'student' && (
+        {isStudent && (
           <div className="header-view-segmented" role="tablist">
             <button
               type="button"
@@ -76,7 +73,7 @@ export default function Header({
           </div>
         )}
 
-        {activeRole === 'student' && studentView === 'workspace' && currentPractical && (
+        {isStudent && studentView === 'workspace' && currentPractical && (
           <div className="header-meta">
             <button
               type="button"
@@ -98,7 +95,7 @@ export default function Header({
 
       {/* Center: Rubric Pills & Session Timer */}
       <div className="header-center">
-        {activeRole === 'student' ? (
+        {isStudent ? (
           studentView === 'workspace' ? (
             <>
               <div className="rubric-pill">
@@ -146,11 +143,32 @@ export default function Header({
         )}
       </div>
 
-      {/* Right: Persona Switcher & Action Buttons */}
+      {/* Right: Authenticated User & Action Buttons */}
       <div className="header-right">
-        <RoleSwitcher currentRole={activeRole} onRoleChange={onRoleChange} />
+        {currentUser && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--bg-app)',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '12px',
+              color: 'var(--text-primary)',
+              marginRight: '2px',
+            }}
+            title={`Authenticated as ${currentUser.name || currentUser.identifier} (${currentUser.role})`}
+          >
+            <span style={{ fontWeight: 600 }}>{currentUser.name || currentUser.identifier}</span>
+            <Badge variant={isStudent ? 'info' : 'warning'}>
+              {isStudent ? 'Student' : 'Faculty'}
+            </Badge>
+          </div>
+        )}
 
-        {activeRole === 'student' ? (
+        {isStudent ? (
           studentView === 'workspace' ? (
             <>
               <Button

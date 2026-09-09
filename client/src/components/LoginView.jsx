@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { loginDemoAccount } from '../services/api';
-import { User, Lock, ArrowRight, Sparkles, School, LockKeyhole } from 'lucide-react';
+import { User, Lock, ArrowRight, School, LockKeyhole } from 'lucide-react';
 
 export default function LoginView({ onLoginSuccess }) {
   const [identifier, setIdentifier] = useState('');
@@ -9,67 +8,6 @@ export default function LoginView({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
-
-  // 1-Click Demo Login for SIH evaluators via secure backend endpoint
-  const handleDemoLogin = async (role) => {
-    setErrorMsg('');
-    setInfoMsg('');
-    setLoading(true);
-    try {
-      const resData = await loginDemoAccount(role);
-      if (resData.session?.access_token) {
-        await supabase.auth.setSession({
-          access_token: resData.session.access_token,
-          refresh_token: resData.session.refresh_token,
-        });
-      }
-      if (resData.profile) {
-        onLoginSuccess(resData.profile);
-        return;
-      }
-    } catch (err) {
-      console.warn('Demo login endpoint unreachable, attempting direct client Supabase demo auth:', err.message);
-      try {
-        const demoEmail = role === 'faculty' ? 'faculty001@college.edu' : 'student001@college.edu';
-        const demoPass = role === 'faculty' ? 'FacultyPassword@2026' : 'StudentPassword@2026';
-        const cleanId = role === 'faculty' ? 'FAC001' : 'GHR2025AI001';
-        const fallbackName = role === 'faculty' ? 'Faculty One' : 'Student 001';
-
-        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
-          email: demoEmail,
-          password: demoPass,
-        });
-
-        if (!authErr && authData?.user) {
-          await fetchProfileAndProceed(authData.user, cleanId, role, fallbackName);
-          return;
-        }
-      } catch (clientAuthErr) {
-        console.warn('Client-side Supabase demo auth failed:', clientAuthErr);
-      }
-
-      const fallbackProfile = role === 'faculty' ? {
-        id: '267914ae-fc60-4a1a-b900-364e6e0fae24',
-        email: 'faculty001@college.edu',
-        identifier: 'FAC001',
-        name: 'Faculty One',
-        role: 'faculty',
-        batchName: 'C1',
-        status: 'active',
-      } : {
-        id: 'a6264b6f-1567-488d-aa70-82a25c66abaa',
-        email: 'student001@college.edu',
-        identifier: 'GHR2025AI001',
-        name: 'Student 001',
-        role: 'student',
-        batchName: 'C1',
-        status: 'active',
-      };
-      onLoginSuccess(fallbackProfile);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -85,7 +23,8 @@ export default function LoginView({ onLoginSuccess }) {
     setLoading(true);
 
     try {
-      // 1. Try unified backend login first (handles auto-activation without email rate limits)
+      // 1. Try unified backend login first
+      let authSucceeded = false;
       try {
         const apiUrl = import.meta.env.VITE_EVALUATION_API_URL || 'http://localhost:8000';
         const backendRes = await fetch(`${apiUrl}/api/auth/login`, {
@@ -103,111 +42,99 @@ export default function LoginView({ onLoginSuccess }) {
             });
           }
           if (resData.profile) {
+            if (!['student', 'faculty'].includes(resData.profile.role)) {
+              throw new Error('Account has an unrecognized or unauthorized role. Access denied.');
+            }
             onLoginSuccess(resData.profile);
+            authSucceeded = true;
             return;
           }
         } else {
           const errJson = await backendRes.json().catch(() => ({}));
-          if (backendRes.status === 401 && errJson.detail) {
+          if (errJson.detail) {
             throw new Error(errJson.detail);
           }
         }
       } catch (backendErr) {
-        // If backend returned explicit authentication error, propagate it
-        if (backendErr.message && (backendErr.message.includes('not recognized') || backendErr.message.includes('Invalid password'))) {
+        // If backend returned explicit authentication error, propagate it directly without fallback
+        if (backendErr.message && (
+          backendErr.message.includes('not recognized') ||
+          backendErr.message.includes('Invalid password') ||
+          backendErr.message.includes('Access denied') ||
+          backendErr.message.includes('unrecognized')
+        )) {
           throw backendErr;
         }
-        console.warn('Backend auth endpoint unavailable, falling back to client-side Supabase lookup:', backendErr);
+        console.warn('Backend auth endpoint unavailable, falling back to direct Supabase lookup:', backendErr);
       }
+
+      if (authSucceeded) return;
 
       // 2. Direct Supabase Fallback:
-      // Server-side lookup via database function or canonical roster mapping
-      let targetEmail = cleanId.toLowerCase();
-      let verifiedRole = 'student';
-      let verifiedName = 'Student';
+      // Lookup the identifier in the institutional database via RPC
+      const { data: rosterUser, error: rpcError } = await supabase
+        .rpc('lookup_user_by_identifier', { p_identifier: cleanId });
 
-      const KNOWN_ROSTER = {
-        'GHR2025AI001': { email: 'student001@college.edu', role: 'student', full_name: 'Student 001' },
-        'FAC001': { email: 'faculty001@college.edu', role: 'faculty', full_name: 'Faculty One' },
-      };
-
-      if (!targetEmail.includes('@')) {
-        if (KNOWN_ROSTER[cleanId]) {
-          targetEmail = KNOWN_ROSTER[cleanId].email;
-          verifiedRole = KNOWN_ROSTER[cleanId].role;
-          verifiedName = KNOWN_ROSTER[cleanId].full_name;
-        } else {
-          const { data: rosterUser, error: rpcError } = await supabase
-            .rpc('lookup_user_by_identifier', { p_identifier: cleanId });
-
-          if (!rpcError && rosterUser && rosterUser.length > 0) {
-            targetEmail = rosterUser[0].email;
-            verifiedRole = rosterUser[0].role;
-            verifiedName = rosterUser[0].full_name;
-          } else {
-            throw new Error('Institutional ID not recognized in college whitelist. Please contact administration.');
-          }
-        }
+      if (rpcError || !rosterUser || rosterUser.length === 0) {
+        throw new Error('Institutional ID not recognized in college database. Access denied.');
       }
 
-      // 3. Authenticate with Supabase Auth
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const rosterEntry = rosterUser[0];
+      const targetEmail = rosterEntry.email;
+      const rosterRole = rosterEntry.role;
+
+      if (!rosterRole || !['student', 'faculty'].includes(rosterRole)) {
+        throw new Error('Account has an unrecognized or unauthorized role. Access denied.');
+      }
+
+      // 3. Authenticate against Supabase Auth (Normal login must NOT create users)
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: targetEmail,
         password: password,
       });
 
-      if (error) {
-        if (error.message.toLowerCase().includes('invalid login credentials')) {
-          throw new Error('Invalid password or ID. Please check your credentials.');
+      if (authError) {
+        if (authError.message?.toLowerCase().includes('invalid login credentials')) {
+          throw new Error('Invalid password for this institutional account. Please check your credentials.');
         }
-        throw error;
+        throw authError;
       }
 
-      if (data?.user) {
-        await fetchProfileAndProceed(data.user, cleanId, verifiedRole, verifiedName);
+      if (!data?.user) {
+        throw new Error('Authentication session could not be established.');
       }
-    } catch (err) {
-      setErrorMsg(err.message || 'Authentication failed. Please check credentials.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const fetchProfileAndProceed = async (authUser, enteredId, fallbackRole, fallbackName) => {
-    try {
-      const { data: profile, error } = await supabase
+      // 4. Retrieve verified profile strictly from the database - never trust client input
+      const { data: profile, error: profError } = await supabase
         .from('profiles')
         .select('*, batches(name), departments(name)')
-        .eq('id', authUser.id)
+        .eq('id', data.user.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') {
-        console.warn('Profile fetch note:', error);
+      if (profError || !profile) {
+        throw new Error('Verified profile not found in college database. Access denied.');
       }
 
-      // Role is determined strictly by the database record - never by user input!
+      const verifiedRole = profile.role;
+      if (!verifiedRole || !['student', 'faculty'].includes(verifiedRole)) {
+        throw new Error('User profile has an unrecognized or unauthorized role. Access denied.');
+      }
+
       const activeUser = {
-        id: authUser.id,
-        email: authUser.email,
-        identifier: profile?.identifier || enteredId,
-        name: profile?.full_name || fallbackName,
-        role: profile?.role || fallbackRole,
-        batchName: profile?.batches?.name || 'Unassigned',
-        status: profile?.status || 'active',
+        id: profile.id,
+        email: profile.email,
+        identifier: profile.identifier || cleanId,
+        name: profile.full_name || rosterEntry.full_name || 'Member',
+        role: verifiedRole,
+        batchName: profile.batches?.name || 'Unassigned',
+        status: profile.status || 'active',
       };
 
       onLoginSuccess(activeUser);
     } catch (err) {
-      console.error('Error fetching profile:', err);
-      onLoginSuccess({
-        id: authUser.id,
-        email: authUser.email,
-        identifier: enteredId,
-        name: fallbackName,
-        role: fallbackRole,
-        batchName: 'Unassigned',
-        status: 'active',
-      });
+      setErrorMsg(err.message || 'Authentication failed. Please check credentials.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -286,34 +213,6 @@ export default function LoginView({ onLoginSuccess }) {
             )}
           </button>
         </form>
-
-        {/* SIH 2026 Evaluator Demo Shortcuts */}
-        <div className="demo-shortcuts">
-          <div className="shortcuts-label">
-            <Sparkles size={12} />
-            <span>SIH 2026 Evaluator Demo Accounts:</span>
-          </div>
-          <div className="shortcuts-list">
-            <button
-              type="button"
-              className="shortcut-chip"
-              onClick={() => handleDemoLogin('student')}
-              title="1-Click Login Student Account (Batch C1 · CS201P)"
-              disabled={loading}
-            >
-              🎓 GHR2025AI001 (Student Demo)
-            </button>
-            <button
-              type="button"
-              className="shortcut-chip"
-              onClick={() => handleDemoLogin('faculty')}
-              title="1-Click Login Faculty Account (CS201P Evaluator)"
-              disabled={loading}
-            >
-              👨‍🏫 FAC001 (Faculty Demo)
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

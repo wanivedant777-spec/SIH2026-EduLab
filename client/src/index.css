@@ -946,47 +946,6 @@ html, body {
   color: var(--info-text);
 }
 
-.demo-shortcuts {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px dashed var(--border-subtle);
-}
-
-.shortcuts-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 600;
-  margin-bottom: 10px;
-  text-transform: uppercase;
-}
-
-.shortcuts-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.shortcut-chip {
-  background: var(--bg-surface-subtle);
-  border: 1px solid var(--border-medium);
-  color: var(--text-primary);
-  font-size: 11px;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-weight: 500;
-}
-
-.shortcut-chip:hover {
-  background: var(--bg-surface-hover);
-  border-color: var(--accent-border);
-  color: var(--accent-text);
-}
-
 /* ==========================================================================
    Dashboard Common & Student / Faculty Styles
    ========================================================================== */

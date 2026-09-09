@@ -790,8 +790,8 @@ def institutional_login(req: AuthLoginRequest):
     """
     Unified Institutional Login Endpoint.
     Never asks if the user is a student or faculty.
-    Resolves the identifier securely from the database roster, verifies or provisions credentials,
-    and returns the verified profile and role.
+    Resolves the identifier securely from the database roster, verifies credentials
+    against Supabase Auth without creating new accounts, and returns the verified profile and role.
     """
     clean_id = req.identifier.strip().upper()
     if not clean_id or not req.password:
@@ -827,16 +827,15 @@ def institutional_login(req: AuthLoginRequest):
 
     roster_entry = res.json()[0]
     email = roster_entry.get("email")
-    role = roster_entry.get("role", "student")
-    full_name = roster_entry.get("full_name", "Member")
-    batch_name = "C1"
-    if isinstance(roster_entry.get("batches"), dict):
-        batch_name = roster_entry["batches"].get("name", "C1")
+    roster_role = roster_entry.get("role")
+    if not roster_role or roster_role not in ("student", "faculty"):
+        raise HTTPException(
+            status_code=403,
+            detail="Account has an unrecognized or unauthorized role. Access denied."
+        )
 
-    # 2. Attempt Supabase Auth sign-in
+    # 2. Attempt Supabase Auth sign-in (NO auto-provisioning: normal login must NOT create users)
     token_url = f"{supabase_url}/auth/v1/token?grant_type=password"
-    session_data = None
-
     try:
         login_res = requests.post(
             token_url,
@@ -844,193 +843,62 @@ def institutional_login(req: AuthLoginRequest):
             json={"email": email, "password": req.password},
             timeout=10
         )
-        if login_res.status_code == 200:
-            session_data = login_res.json()
-        else:
-            # First-time sign in: auto-provision confirmed account via Admin API without email limits
-            admin_create_url = f"{supabase_url}/auth/v1/admin/users"
-            admin_res = requests.post(
-                admin_create_url,
-                headers=admin_headers,
-                json={
-                    "email": email,
-                    "password": req.password,
-                    "email_confirm": True,
-                    "user_metadata": {
-                        "full_name": full_name,
-                        "identifier": clean_id
-                    },
-                    "app_metadata": {
-                        "role": role
-                    }
-                },
-                timeout=10
+        if login_res.status_code != 200:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid password for this institutional account. Please check your credentials."
             )
-            if admin_res.status_code in (200, 201):
-                # Account successfully provisioned, now login
-                retry_login = requests.post(
-                    token_url,
-                    headers={"apikey": service_key, "Content-Type": "application/json"},
-                    json={"email": email, "password": req.password},
-                    timeout=10
-                )
-                if retry_login.status_code == 200:
-                    session_data = retry_login.json()
-            else:
-                # If account exists but password was wrong
-                raise HTTPException(
-                    status_code=401,
-                    detail="Invalid password for this institutional account. Please check your credentials."
-                )
+        session_data = login_res.json()
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Authentication service error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Authentication service encountered an error. Please try again later.")
 
-    user_id = session_data.get("user", {}).get("id") if session_data else None
+    user_id = session_data.get("user", {}).get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication session could not be established.")
 
-    # 3. Retrieve verified profile
-    prof_url = f"{supabase_url}/rest/v1/profiles?email=eq.{email}&select=*,batches(name)"
+    # 3. Retrieve verified profile from profiles table
+    prof_url = f"{supabase_url}/rest/v1/profiles?id=eq.{user_id}&select=*,batches(name)"
     try:
         prof_res = requests.get(prof_url, headers=admin_headers, timeout=10)
-        if prof_res.status_code == 200 and prof_res.json():
-            p = prof_res.json()[0]
-            user_id = p.get("id") or user_id
-            role = p.get("role") or role
-            full_name = p.get("full_name") or full_name
-            if isinstance(p.get("batches"), dict):
-                batch_name = p["batches"].get("name", batch_name)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("Error retrieving user profile: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Error fetching verified profile.")
+
+    if prof_res.status_code != 200 or not prof_res.json():
+        raise HTTPException(
+            status_code=403,
+            detail="Verified profile not found in college database. Access denied."
+        )
+
+    p = prof_res.json()[0]
+    verified_role = p.get("role")
+    if not verified_role or verified_role not in ("student", "faculty"):
+        raise HTTPException(
+            status_code=403,
+            detail="User profile has an unrecognized or unauthorized role. Access denied."
+        )
+
+    batch_name = "Unassigned"
+    if isinstance(p.get("batches"), dict):
+        batch_name = p["batches"].get("name", "Unassigned")
+    elif isinstance(roster_entry.get("batches"), dict):
+        batch_name = roster_entry["batches"].get("name", "Unassigned")
 
     return {
         "status": "success",
         "session": session_data,
         "profile": {
-            "id": user_id,
-            "email": email,
-            "identifier": clean_id,
-            "name": full_name,
-            "role": role,
+            "id": p.get("id", user_id),
+            "email": p.get("email", email),
+            "identifier": p.get("identifier", clean_id),
+            "name": p.get("full_name", roster_entry.get("full_name", "Member")),
+            "role": verified_role,
             "batchName": batch_name,
-            "status": "active"
+            "status": p.get("status", "active")
         }
-    }
-
-
-class DemoLoginRequest(BaseModel):
-    role: str = Field(..., description="Target demo persona: 'student' or 'faculty'")
-
-
-@app.post("/api/auth/demo-login", tags=["Authentication"])
-def demo_login(req: DemoLoginRequest):
-    """
-    Dedicated demo login endpoint for hackathon evaluators.
-    Only enabled when ENABLE_DEMO_LOGIN=true is configured server-side.
-    Returns a real Supabase session and verified profile for seeded demo accounts
-    without exposing credentials to the client bundle.
-    """
-    enable_demo = os.getenv("ENABLE_DEMO_LOGIN", "false").strip().lower() in ("true", "1", "yes")
-    if not enable_demo:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo login is disabled in this environment."
-        )
-
-    target_role = req.role.strip().lower()
-    if target_role not in ("student", "faculty"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be either 'student' or 'faculty'."
-        )
-
-    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
-    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "")
-    if not supabase_url or not service_key:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase credentials not configured on backend."
-        )
-
-    # Server-stored credentials - NEVER exposed to the client bundle
-    demo_credentials = {
-        "student": {
-            "email": os.getenv("DEMO_STUDENT_EMAIL", "student001@college.edu"),
-            "password": os.getenv("DEMO_STUDENT_PASSWORD", ""),
-            "identifier": "GHR2025AI001",
-        },
-        "faculty": {
-            "email": os.getenv("DEMO_FACULTY_EMAIL", "faculty001@college.edu"),
-            "password": os.getenv("DEMO_FACULTY_PASSWORD", ""),
-            "identifier": "FAC001",
-        }
-    }
-
-    creds = demo_credentials[target_role]
-    if not creds["password"]:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Demo credentials for {target_role} are not configured in environment."
-        )
-    token_url = f"{supabase_url}/auth/v1/token?grant_type=password"
-
-    try:
-        login_res = requests.post(
-            token_url,
-            headers={"apikey": service_key, "Content-Type": "application/json"},
-            json={"email": creds["email"], "password": creds["password"]},
-            timeout=10
-        )
-        if login_res.status_code != 200:
-            logger.error("Demo login failed for %s: %s", target_role, login_res.text)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Unable to authenticate demo {target_role} account."
-            )
-        session_data = login_res.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Demo login request failed: %s", e)
-        raise HTTPException(status_code=500, detail="Demo authentication service error.")
-
-    user_id = session_data.get("user", {}).get("id")
-    user_token = session_data.get("access_token", service_key)
-    admin_headers = {
-        "apikey": service_key,
-        "Authorization": f"Bearer {user_token}",
-        "Content-Type": "application/json"
-    }
-
-    # Retrieve verified profile
-    prof_url = f"{supabase_url}/rest/v1/profiles?email=eq.{creds['email']}&select=*,batches(name)"
-    profile_data = {
-        "id": user_id,
-        "email": creds["email"],
-        "identifier": creds["identifier"],
-        "name": "Student 001" if target_role == "student" else "Faculty One",
-        "role": target_role,
-        "batchName": "C1" if target_role == "student" else "All Allocated Batches",
-        "status": "active"
-    }
-    try:
-        prof_res = requests.get(prof_url, headers=admin_headers, timeout=5)
-        if prof_res.status_code == 200 and prof_res.json():
-            p = prof_res.json()[0]
-            profile_data["id"] = p.get("id") or user_id
-            profile_data["name"] = p.get("full_name") or profile_data["name"]
-            profile_data["identifier"] = p.get("identifier") or creds["identifier"]
-            profile_data["role"] = p.get("role") or target_role
-            if isinstance(p.get("batches"), dict):
-                profile_data["batchName"] = p["batches"].get("name", profile_data["batchName"])
-    except Exception as e:
-        logger.warning("Could not fetch extended profile for demo account: %s", e)
-
-    return {
-        "status": "success",
-        "session": session_data,
-        "profile": profile_data
     }
 
 
