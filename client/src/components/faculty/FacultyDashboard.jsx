@@ -6,7 +6,10 @@ import {
   AlertTriangle,
   RefreshCw,
   Sparkles,
+  Users,
 } from 'lucide-react';
+import Card, { CardHeader, CardTitle, CardContent } from '../ui/Card';
+import Badge from '../ui/Badge';
 import FacultySubjectSelector from './FacultySubjectSelector';
 import FacultyBatchSelector from './FacultyBatchSelector';
 import FacultyActiveContext from './FacultyActiveContext';
@@ -29,6 +32,7 @@ import {
 
 export default function FacultyDashboard({
   currentUser,
+  activeNav = 'dashboard',
   facultyAllocations: _initialAllocations = [],
   isLoading: _initialLoading = false,
   error: parentError = null,
@@ -239,6 +243,38 @@ export default function FacultyDashboard({
     [submissions]
   );
 
+  const uniqueStudents = useMemo(() => {
+    const map = new Map();
+    submissions.forEach((s) => {
+      const key = s.studentId || s.prn || s.studentName;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          name: s.studentName || 'Student',
+          prn: s.prn || s.rollNumber || '—',
+          submissionsCount: 1,
+          latestScore: s.totalMarks !== undefined && s.totalMarks !== null ? `${s.totalMarks} / 10.0 M` : `${s.codingMarks || 0} / 3.0 M`,
+          status: s.status || 'Submitted',
+        });
+      } else {
+        const item = map.get(key);
+        item.submissionsCount += 1;
+      }
+    });
+    return Array.from(map.values());
+  }, [submissions]);
+
+  const gradedSubmissionsCount = useMemo(
+    () => submissions.filter((s) => s.status === 'Graded').length,
+    [submissions]
+  );
+
+  const avgBatchCodingMarks = useMemo(() => {
+    if (submissions.length === 0) return '0.0';
+    const sum = submissions.reduce((acc, s) => acc + (parseFloat(s.codingMarks) || 0), 0);
+    return (sum / submissions.length).toFixed(1);
+  }, [submissions]);
+
   return (
     <div className="faculty-portal-root">
       <div className="faculty-portal-container">
@@ -371,9 +407,80 @@ export default function FacultyDashboard({
         )}
 
         {/* =========================================================
-            5. ASSIGNMENTS SECTION
+            STUDENTS VIEW: Batch Student Roster
             ========================================================= */}
-        {selectedSubject && selectedBatch && (
+        {selectedSubject && selectedBatch && activeNav === 'students' && (
+          <section className="faculty-workflow-step">
+            <Card surface="white">
+              <CardHeader>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Users size={16} color="var(--primary)" />
+                  <CardTitle as="h2" style={{ fontSize: '15px' }}>
+                    Student Roster · Batch {selectedBatch.name}
+                  </CardTitle>
+                </div>
+                <Badge variant="primary" size="sm">
+                  {uniqueStudents.length} Active Students
+                </Badge>
+              </CardHeader>
+              <CardContent style={{ padding: '0' }}>
+                {uniqueStudents.length === 0 ? (
+                  <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    <Users size={28} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+                    <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px' }}>
+                      No Student Submissions Yet
+                    </h3>
+                    <p style={{ fontSize: '12.5px', margin: 0 }}>
+                      Students enrolled in Batch {selectedBatch.name} will be cataloged here once practicals are attempted.
+                    </p>
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>PRN / Identifier</th>
+                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>Student Name</th>
+                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>Submissions</th>
+                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>Latest Evaluation</th>
+                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {uniqueStudents.map((st) => (
+                        <tr key={st.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                          <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--primary)' }}>
+                            {st.prn}
+                          </td>
+                          <td style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {st.name}
+                          </td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <Badge variant="neutral" size="sm">
+                              {st.submissionsCount} Practical{st.submissionsCount === 1 ? '' : 's'}
+                            </Badge>
+                          </td>
+                          <td style={{ padding: '12px 16px', fontWeight: 600 }}>
+                            {st.latestScore}
+                          </td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <Badge variant={st.status === 'Graded' ? 'success' : 'warning'} size="sm">
+                              {st.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+        )}
+
+        {/* =========================================================
+            PRACTICALS & ASSIGNMENTS VIEW
+            ========================================================= */}
+        {selectedSubject && selectedBatch && (activeNav === 'dashboard' || activeNav === 'practicals') && (
           <section className="faculty-workflow-step">
             <FacultyAssignmentsSection
               assignments={assignments}
@@ -384,16 +491,23 @@ export default function FacultyDashboard({
         )}
 
         {/* =========================================================
-            6. SUBMISSIONS & 10M EVALUATION QUEUE
+            SUBMISSIONS & EVALUATION QUEUE VIEW
             ========================================================= */}
-        {selectedSubject && selectedBatch && (
+        {selectedSubject && selectedBatch && (activeNav === 'dashboard' || activeNav === 'submissions' || activeNav === 'evaluations') && (
           <section className="faculty-workflow-step">
             <div className="section-head-row" style={{ marginBottom: '14px' }}>
               <div className="section-title-wrap">
                 <Award size={15} />
-                <h3>Student Submissions · Batch {selectedBatch.name}</h3>
+                <h3>
+                  {activeNav === 'evaluations' ? 'Evaluation & Grading Console' : 'Student Submissions'} · Batch {selectedBatch.name}
+                </h3>
                 <span className="section-count-tag">{submissions.length}</span>
               </div>
+              {activeNav === 'evaluations' && (
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Click "Grade 10M Rubric" to evaluate performing, journal, and viva marks
+                </span>
+              )}
             </div>
 
             <SubmissionsQueue
@@ -401,6 +515,97 @@ export default function FacultyDashboard({
               onOpenGrading={handleOpenGrading}
               onOpenAuditLogs={handleOpenAuditLogs}
             />
+          </section>
+        )}
+
+        {/* =========================================================
+            ANALYTICS VIEW
+            ========================================================= */}
+        {selectedSubject && selectedBatch && activeNav === 'analytics' && (
+          <section className="faculty-workflow-step">
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '16px',
+                marginBottom: '20px',
+              }}
+            >
+              <Card surface="white" style={{ padding: '18px 20px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                  Total Batch Submissions
+                </div>
+                <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
+                  {submissions.length}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Batch {selectedBatch.name} · {selectedSubject.code}
+                </div>
+              </Card>
+
+              <Card surface="white" style={{ padding: '18px 20px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                  10-Mark Rubrics Evaluated
+                </div>
+                <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--success)', marginTop: '4px' }}>
+                  {gradedSubmissionsCount}{' '}
+                  <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-muted)' }}>
+                    / {submissions.length}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  {submissions.length > 0 ? `${Math.round((gradedSubmissionsCount / submissions.length) * 100)}% graded` : 'No submissions'}
+                </div>
+              </Card>
+
+              <Card surface="white" style={{ padding: '18px 20px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                  Avg Auto-Coding Score
+                </div>
+                <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--primary)', marginTop: '4px' }}>
+                  {avgBatchCodingMarks}{' '}
+                  <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-muted)' }}>
+                    / 3.0 M
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Judge0 automated pass average
+                </div>
+              </Card>
+
+              <Card surface="white" style={{ padding: '18px 20px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                  Focus / Blur Telemetry Flags
+                </div>
+                <div style={{ fontSize: '26px', fontWeight: 700, color: flaggedCount > 0 ? 'var(--warning)' : 'var(--text-primary)', marginTop: '4px' }}>
+                  {flaggedCount}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Integrity blur events logged
+                </div>
+              </Card>
+            </div>
+
+            <Card surface="white" style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+                    AICTE Institutional Gradebook Export
+                  </h3>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                    Generate official CSV format gradebook including Student PRN, Name, 3M Auto-Code, 5M Journal, and 2M Viva marks.
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  icon={Download}
+                  onClick={handleExportCSV}
+                  disabled={submissions.length === 0}
+                >
+                  Download CSV Gradebook
+                </Button>
+              </div>
+            </Card>
           </section>
         )}
 

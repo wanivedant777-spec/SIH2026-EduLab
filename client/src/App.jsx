@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import Header from './components/common/Header';
+import AppShell from './components/common/AppShell';
 import StudentDashboard from './components/student/StudentDashboard';
 import StudentWorkspace from './components/student/StudentWorkspace';
+import StudentPracticalsView from './components/student/StudentPracticalsView';
+import StudentLearningView from './components/student/StudentLearningView';
+import StudentVisualizationsView from './components/student/StudentVisualizationsView';
+import StudentSubmissionsView from './components/student/StudentSubmissionsView';
+import StudentProgressView from './components/student/StudentProgressView';
 import PracticalModal from './components/student/PracticalModal';
 import FacultyDashboard from './components/faculty/FacultyDashboard';
 import AuditLogDrawer from './components/faculty/AuditLogDrawer';
@@ -38,8 +43,9 @@ export default function App() {
   const [isLoadingSubjects, setIsLoadingSubjects] = useState(false);
   const [assignments, setAssignments] = useState([]);
 
-  // Navigation State
-  const [studentView, setStudentView] = useState('dashboard'); // 'dashboard' | 'workspace'
+  // Navigation State (Student & Faculty Navigation)
+  const [activeNav, setActiveNav] = useState('dashboard');
+  const [_studentView, setStudentView] = useState('dashboard'); // 'dashboard' | 'workspace'
   const [practicals, setPracticals] = useState([]);
   const [currentPractical, setCurrentPractical] = useState(null);
   const [isPracticalModalOpen, setIsPracticalModalOpen] = useState(false);
@@ -123,6 +129,7 @@ export default function App() {
         setSubjects([]);
         setSelectedSubject(null);
         setAssignments([]);
+        setActiveNav('dashboard');
         setStudentView('dashboard');
         setPracticals([]);
         setSubmissions([]);
@@ -240,6 +247,7 @@ export default function App() {
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
+    setActiveNav('dashboard');
     setStudentView('dashboard');
     addToast(`Welcome, ${user.name || user.identifier || 'User'}! Authenticated via Supabase.`, 'success');
   };
@@ -255,10 +263,26 @@ export default function App() {
     setFacultyAllocations([]);
     setSubjects([]);
     setSelectedSubject(null);
+    setActiveNav('dashboard');
     setStudentView('dashboard');
     setPracticals([]);
     setSubmissions([]);
     addToast('Signed out successfully.', 'info');
+  };
+
+  const handleNavigate = (navId) => {
+    setActiveNav(navId);
+    if (navId === 'workspace') {
+      setStudentView('workspace');
+    } else {
+      setStudentView('dashboard');
+    }
+  };
+
+  const handleOpenWorkspace = (prac) => {
+    if (prac) handleSelectPractical(prac);
+    setActiveNav('workspace');
+    setStudentView('workspace');
   };
 
   // Switch selected subject and load only that subject's practicals/assignments
@@ -541,29 +565,31 @@ export default function App() {
     addToast('10-Mark Gradebook exported successfully (CSV format).', 'success');
   };
 
-  return (
-    <div className="app-root">
-      {/* Top Application Bar */}
-      <Header
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        studentView={studentView}
-        onStudentViewChange={(view) => {
-          setStudentView(view);
-        }}
-        currentPractical={currentPractical}
-        onOpenPracticalModal={() => setIsPracticalModalOpen(true)}
-        onOpenAuditDrawer={() => setIsAuditDrawerOpen(true)}
-        onRunCode={handleRunCode}
-        onSubmitPractical={handleSubmitPractical}
-        onExportGradebook={handleExportGradebook}
-        isRunning={isRunning}
-        isSubmitted={isSubmitted}
-      />
+  const metaCounts = {
+    practicals: assignments.length || practicals.length,
+    submissions: submissions.length,
+    pendingEvaluations: submissions.filter((s) => s.status !== 'Graded').length,
+  };
 
-      {/* Main Experience: Student (Dashboard vs Workspace) vs Faculty Dashboard */}
+  return (
+    <AppShell
+      currentUser={currentUser}
+      activeNav={activeNav}
+      onNavigate={handleNavigate}
+      onLogout={handleLogout}
+      currentPractical={currentPractical}
+      onOpenPracticalModal={() => setIsPracticalModalOpen(true)}
+      onOpenAuditDrawer={() => setIsAuditDrawerOpen(true)}
+      onRunCode={handleRunCode}
+      onSubmitPractical={handleSubmitPractical}
+      onExportGradebook={handleExportGradebook}
+      isRunning={isRunning}
+      isSubmitted={isSubmitted}
+      metaCounts={metaCounts}
+    >
+      {/* Main Experience: Student Views vs Faculty Dashboard */}
       {currentUser?.role === 'student' ? (
-        studentView === 'dashboard' ? (
+        activeNav === 'dashboard' ? (
           <StudentDashboard
             currentUser={currentUser}
             studentProfile={studentProfile}
@@ -571,21 +597,48 @@ export default function App() {
             selectedSubject={selectedSubject}
             onSelectSubject={handleSelectSubject}
             assignments={assignments}
+            practicals={practicals}
             currentPractical={currentPractical}
+            submissions={submissions}
+            evaluationResult={evaluationResult}
             isLoading={isLoadingData}
             isLoadingSubjects={isLoadingSubjects}
             error={dataError}
             onRetry={loadData}
-            onContinuePractical={(prac) => {
-              if (prac) handleSelectPractical(prac);
-              setStudentView('workspace');
-            }}
-            onSelectPractical={(prac) => {
-              handleSelectPractical(prac);
-              setStudentView('workspace');
-            }}
+            onContinuePractical={handleOpenWorkspace}
+            onSelectPractical={handleOpenWorkspace}
           />
-        ) : (
+        ) : activeNav === 'practicals' ? (
+          <StudentPracticalsView
+            subjects={subjects}
+            selectedSubject={selectedSubject}
+            onSelectSubject={handleSelectSubject}
+            assignments={assignments}
+            practicals={practicals}
+            currentPractical={currentPractical}
+            submissions={submissions}
+            onSelectPractical={handleOpenWorkspace}
+            isLoading={isLoadingData}
+            error={dataError}
+            onRetry={loadData}
+            studentBatchName={studentProfile?.batchName || currentUser?.batchName || 'Your Batch'}
+          />
+        ) : activeNav === 'learning' ? (
+          <StudentLearningView
+            practical={currentPractical}
+            practicals={practicals}
+            onSelectPractical={handleSelectPractical}
+            onGoToWorkspace={handleOpenWorkspace}
+            selectedSubject={selectedSubject}
+          />
+        ) : activeNav === 'visualizations' ? (
+          <StudentVisualizationsView
+            practical={currentPractical}
+            practicals={practicals}
+            onSelectPractical={handleSelectPractical}
+            onGoToWorkspace={handleOpenWorkspace}
+          />
+        ) : activeNav === 'workspace' ? (
           <StudentWorkspace
             practical={currentPractical}
             language={language}
@@ -603,10 +656,41 @@ export default function App() {
             isAutoSaving={isAutoSaving}
             onRunCode={handleRunCode}
           />
+        ) : activeNav === 'submissions' ? (
+          <StudentSubmissionsView
+            submissions={submissions}
+            onContinuePractical={handleOpenWorkspace}
+          />
+        ) : activeNav === 'progress' ? (
+          <StudentProgressView
+            submissions={submissions}
+            practicals={practicals}
+            studentProfile={studentProfile}
+          />
+        ) : (
+          <StudentDashboard
+            currentUser={currentUser}
+            studentProfile={studentProfile}
+            subjects={subjects}
+            selectedSubject={selectedSubject}
+            onSelectSubject={handleSelectSubject}
+            assignments={assignments}
+            practicals={practicals}
+            currentPractical={currentPractical}
+            submissions={submissions}
+            evaluationResult={evaluationResult}
+            isLoading={isLoadingData}
+            isLoadingSubjects={isLoadingSubjects}
+            error={dataError}
+            onRetry={loadData}
+            onContinuePractical={handleOpenWorkspace}
+            onSelectPractical={handleOpenWorkspace}
+          />
         )
       ) : (
         <FacultyDashboard
           currentUser={currentUser}
+          activeNav={activeNav}
           facultyAllocations={facultyAllocations}
           submissions={submissions}
           batchMetrics={batchMetrics}
@@ -663,6 +747,6 @@ export default function App() {
 
       {/* Toast Notification Layer */}
       <Toast toasts={toasts} onDismiss={dismissToast} />
-    </div>
+    </AppShell>
   );
 }

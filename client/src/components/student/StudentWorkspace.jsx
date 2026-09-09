@@ -34,7 +34,7 @@ export default function StudentWorkspace({
   }, [isRunning]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: 'calc(100vh - 48px)', overflow: 'hidden' }}>
+    <div className="workspace-wrapper" style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
       {/* Responsive pane navigation bar for tablets & mobile (<1024px) */}
       <div className="workspace-mobile-nav">
         <button
