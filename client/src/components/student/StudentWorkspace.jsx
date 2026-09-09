@@ -27,6 +27,7 @@ import {
   HelpCircle,
   Layers,
   CheckCircle,
+  Inbox,
 } from 'lucide-react';
 import CodeEditor from './CodeEditor';
 import Hero3DObject from './Hero3DObject';
@@ -35,6 +36,8 @@ import Button from '../ui/Button';
 
 export default function StudentWorkspace({
   practical,
+  practicals = [],
+  isLoading = false,
   language = 'cpp',
   onLanguageChange,
   code = '',
@@ -52,8 +55,8 @@ export default function StudentWorkspace({
   onSubmitPractical,
   isSubmitted = false,
   onNavigate,
-  _currentUser,
-  _onSelectPractical,
+  currentUser: _currentUser,
+  onSelectPractical,
 }) {
   // Panel Visibility States
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
@@ -161,6 +164,48 @@ export default function StudentWorkspace({
     );
   };
 
+  // Auto-select first real assigned practical if practical is not selected yet
+  useEffect(() => {
+    if (!practical && practicals && practicals.length > 0 && onSelectPractical) {
+      onSelectPractical(practicals[0], { showToast: false });
+    }
+  }, [practical, practicals, onSelectPractical]);
+
+  // 1. Loading state: If data is still loading or auto-selection is resolving
+  if ((isLoading || (!practical && practicals?.length > 0)) && !practical) {
+    return (
+      <div className="codelab-root" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '600px', flexDirection: 'column', gap: '16px' }}>
+        <div className="animate-spin" style={{ width: 36, height: 36, border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
+        <div style={{ color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 500 }}>Loading assigned practical...</div>
+      </div>
+    );
+  }
+
+  // 2. Empty state: If not loading and no practical is assigned to student
+  if (!isLoading && !practical) {
+    return (
+      <div className="codelab-root" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '600px', flexDirection: 'column', gap: '16px', padding: '32px', textAlign: 'center' }}>
+        <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+          <Inbox size={28} />
+        </div>
+        <div>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>No Practical Assigned</h2>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '420px', lineHeight: 1.5 }}>
+            There are currently no active practical assignments available in your curriculum. Once your faculty assigns a practical, it will appear here.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+          <Button variant="outline" onClick={() => onNavigate && onNavigate('dashboard')}>
+            Back to Dashboard
+          </Button>
+          <Button variant="primary" onClick={() => onNavigate && onNavigate('practicals')}>
+            View Curriculum
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="codelab-root">
       {/* 1. TOP BAR — Practical Context, Language, Status, Run, Submit */}
@@ -177,18 +222,18 @@ export default function StudentWorkspace({
             </span>
             <span className="codelab-breadcrumb-sep">/</span>
             <span className="codelab-breadcrumb-crumb">
-              {practical?.courseCode?.split(':')[0] || 'CS201P'}
+              {practical?.courseCode?.split(':')[0] || practical?.course_code || practical?.subjectCode || 'Lab'}
             </span>
             <span className="codelab-breadcrumb-sep">/</span>
             <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-              Practical {practical?.practicalNumber || '04'}
+              Practical {practical?.practicalNumber || practical?.practical_number || practical?.assignmentNumber || '01'}
             </span>
           </nav>
 
           <span style={{ color: 'var(--border-strong)' }}>|</span>
 
-          <h1 className="codelab-practical-title" title={practical?.title || 'Data Structures Lab'}>
-            {practical?.title || 'Binary Search Tree Operations'}
+          <h1 className="codelab-practical-title" title={practical?.title || 'Laboratory Practical'}>
+            {practical?.title || 'Laboratory Practical'}
           </h1>
 
           {practical?.difficulty && (
@@ -229,6 +274,7 @@ export default function StudentWorkspace({
             size="sm"
             icon={RotateCcw}
             onClick={onResetCode}
+            disabled={!practical || isRunning}
             title="Reset editor buffer to laboratory starter template"
           >
             Reset
@@ -240,7 +286,7 @@ export default function StudentWorkspace({
             size="sm"
             icon={isRunning ? Zap : Play}
             onClick={onRunCode}
-            disabled={isRunning}
+            disabled={isRunning || !practical}
             className="codelab-btn-run"
             title="Execute test suite against Judge0 execution sandbox"
           >
@@ -253,7 +299,7 @@ export default function StudentWorkspace({
             size="sm"
             icon={isSubmitted ? CheckCircle : Send}
             onClick={onSubmitPractical}
-            disabled={isRunning || isSubmitted}
+            disabled={isRunning || isSubmitted || !practical}
             className={`codelab-btn-submit ${isSubmitted ? 'submitted' : ''}`}
             title={isSubmitted ? 'Laboratory practical submitted' : 'Submit evaluated solution to faculty gradebook'}
           >
@@ -384,7 +430,7 @@ export default function StudentWorkspace({
             </div>
 
             {/* Sample Input & Output */}
-            {practical?.testCases?.[0] && (
+            {sampleTests.length > 0 && (
               <div className="codelab-spec-card">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <div className="codelab-spec-title" style={{ margin: 0 }}>
@@ -395,7 +441,7 @@ export default function StudentWorkspace({
                     variant="ghost"
                     size="sm"
                     icon={copiedSample ? Check : Copy}
-                    onClick={() => handleCopySampleInput(practical.testCases[0].input_data || '')}
+                    onClick={() => handleCopySampleInput(sampleTests[0].input || sampleTests[0].input_data || '')}
                     style={{ padding: '2px 6px', fontSize: '11px', height: '22px' }}
                   >
                     {copiedSample ? 'Copied' : 'Copy Input'}
@@ -403,10 +449,10 @@ export default function StudentWorkspace({
                 </div>
 
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '3px' }}>Input (stdin):</div>
-                <pre className="codelab-example-box">{practical.testCases[0].input_data || '5\n10 5 15 3 7'}</pre>
+                <pre className="codelab-example-box">{sampleTests[0].input || sampleTests[0].input_data || 'No standard input required'}</pre>
 
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: '3px' }}>Expected Output (stdout):</div>
-                <pre className="codelab-example-box" style={{ color: '#6ee7b7' }}>{practical.testCases[0].expected_output || '3 5 7 10 15'}</pre>
+                <pre className="codelab-example-box" style={{ color: '#6ee7b7' }}>{sampleTests[0].expected_output || ''}</pre>
               </div>
             )}
 

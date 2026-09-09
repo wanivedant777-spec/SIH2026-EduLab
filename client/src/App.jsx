@@ -182,22 +182,30 @@ export default function App() {
         if (activeSubj) {
           const studentAssignments = await getStudentAssignments(currentUser.id, activeSubj.id);
           setAssignments(studentAssignments);
-          const prs = studentAssignments.map((a) => a.practical);
+          const prs = studentAssignments.map((a) => a.practical).filter(Boolean);
           setPracticals(prs);
 
           if (prs.length > 0) {
             setCurrentPractical((prev) => {
-              if (!prev) return prs[0];
-              const matched = prs.find((p) => p.id === prev.id);
-              return matched || prs[0];
+              const matched = prev ? prs.find((p) => p.id === prev.id) : null;
+              const resolved = matched || prs[0];
+              setCode((prevCode) => {
+                if (!prevCode || (prev && prev.id !== resolved.id)) {
+                  return resolved.starterCodes?.[language] || resolved.starterCodes?.cpp || '';
+                }
+                return prevCode;
+              });
+              return resolved;
             });
           } else {
             setCurrentPractical(null);
+            setCode('');
           }
         } else {
           setAssignments([]);
           setPracticals([]);
           setCurrentPractical(null);
+          setCode('');
         }
 
         // 5. Fetch student's own submissions
@@ -283,13 +291,20 @@ export default function App() {
     setActiveNav(navId);
     if (navId === 'workspace') {
       setStudentView('workspace');
+      if (!currentPractical && practicals.length > 0) {
+        handleSelectPractical(practicals[0], { showToast: false });
+      }
     } else {
       setStudentView('dashboard');
     }
   };
 
   const handleOpenWorkspace = (prac) => {
-    if (prac) handleSelectPractical(prac);
+    if (prac) {
+      handleSelectPractical(prac);
+    } else if (!currentPractical && practicals.length > 0) {
+      handleSelectPractical(practicals[0]);
+    }
     setActiveNav('workspace');
     setStudentView('workspace');
   };
@@ -303,12 +318,15 @@ export default function App() {
       if (currentUser?.role === 'student') {
         const studentAssignments = await getStudentAssignments(currentUser.id, subject.id);
         setAssignments(studentAssignments);
-        const prs = studentAssignments.map((a) => a.practical);
+        const prs = studentAssignments.map((a) => a.practical).filter(Boolean);
         setPracticals(prs);
         if (prs.length > 0) {
-          setCurrentPractical(prs[0]);
+          const firstPrac = prs[0];
+          setCurrentPractical(firstPrac);
+          setCode(firstPrac.starterCodes?.[language] || firstPrac.starterCodes?.cpp || '');
         } else {
           setCurrentPractical(null);
+          setCode('');
         }
         addToast(`Loaded ${subject.name || subject.code} assignments`, 'info');
       } else {
@@ -330,7 +348,8 @@ export default function App() {
   };
 
   // Update starter code when active practical changes
-  const handleSelectPractical = (selected) => {
+  const handleSelectPractical = (selected, options = {}) => {
+    if (!selected) return;
     setCurrentPractical(selected);
     const template = selected.starterCodes?.[language] || selected.starterCodes?.cpp || '';
     setCode(template);
@@ -340,7 +359,9 @@ export default function App() {
     setActiveTestIndex(-1);
     setIsSubmitted(false);
     setStdoutMessage('');
-    addToast(`Loaded ${selected.title?.split(':')[0] || 'Practical'} into workspace`, 'info');
+    if (options.showToast !== false) {
+      addToast(`Loaded ${selected.title?.split(':')[0] || 'Practical'} into workspace`, 'info');
+    }
   };
 
   // Language switch
@@ -372,8 +393,17 @@ export default function App() {
 
   // Execute Code via Judge0 / FastAPI
   const handleRunCode = async () => {
-    if (!currentPractical) {
-      addToast('No active practical selected.', 'warning');
+    let activePrac = currentPractical;
+    if (!activePrac && practicals.length > 0) {
+      activePrac = practicals[0];
+      setCurrentPractical(activePrac);
+      if (!code) {
+        setCode(activePrac.starterCodes?.[language] || activePrac.starterCodes?.cpp || '');
+      }
+    }
+
+    if (!activePrac) {
+      addToast('No active practical assigned to your batch.', 'warning');
       return;
     }
 
@@ -397,17 +427,19 @@ export default function App() {
       java: 'javac -Xlint:all Main.java',
     };
 
+    const sourceCodeToRun = code || activePrac.starterCodes?.[language] || activePrac.starterCodes?.cpp || '';
+
     const payload = {
       student_id: currentUser?.id || currentUser?.identifier || 'unassigned',
-      practical_id: currentPractical.id,
-      practical_number: currentPractical.practicalNumber,
-      practical_title: currentPractical.title,
-      subject_code: currentPractical.courseCode?.split(':')[0]?.trim() || 'CS201P',
+      practical_id: activePrac.id,
+      practical_number: activePrac.practicalNumber,
+      practical_title: activePrac.title,
+      subject_code: activePrac.courseCode?.split(':')[0]?.trim() || activePrac.subjectCode || 'CS201P',
       language_id: languageMap[language] || 54,
-      source_code: code,
+      source_code: sourceCodeToRun,
       attempt_count: 1,
       time_spent_seconds: 420,
-      test_cases: currentPractical.testCases || [],
+      test_cases: activePrac.testCases || [],
     };
 
     try {
@@ -503,6 +535,11 @@ export default function App() {
 
   // Submit Practical to Supabase
   const handleSubmitPractical = async () => {
+    if (!currentPractical) {
+      addToast('No active practical selected to submit.', 'warning');
+      return;
+    }
+
     if (!evaluationResult) {
       addToast('Please run and test your code first before submitting the practical.', 'warning');
       return;
@@ -658,6 +695,8 @@ export default function App() {
         ) : activeNav === 'workspace' ? (
           <StudentWorkspace
             practical={currentPractical}
+            practicals={practicals}
+            isLoading={isLoadingData}
             language={language}
             onLanguageChange={handleLanguageChange}
             code={code}
