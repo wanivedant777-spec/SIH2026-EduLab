@@ -9,23 +9,13 @@ export default function LoginView({ onLoginSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
-  const handleAuth = async (e, customId = null, customPassword = null) => {
+  const handleAuth = async (e) => {
     if (e) e.preventDefault();
     setErrorMsg('');
     setInfoMsg('');
 
-    const targetId = customId || identifier;
-    const targetPwd = customPassword || password;
-
-    let cleanId = targetId.trim().toUpperCase();
-    // Resolve common user entry variations:
-    if (/^GHR2025\d{3}$/.test(cleanId)) {
-      cleanId = cleanId.replace(/^GHR2025(\d{3})$/, 'GHR2025AI$1');
-    } else if (['STUDENT001', 'STUDENT_001', 'STUDENT', 'STUDENT1'].includes(cleanId)) {
-      cleanId = 'GHR2025AI001';
-    } else if (['FACULTY001', 'FACULTY_001', 'FACULTY', 'FACULTY1'].includes(cleanId)) {
-      cleanId = 'FAC001';
-    }
+    const cleanId = identifier.trim().toUpperCase();
+    const targetPwd = password;
 
     if (!cleanId || !targetPwd) {
       setErrorMsg('Please enter both your Institutional ID and Password.');
@@ -35,136 +25,33 @@ export default function LoginView({ onLoginSuccess }) {
     setLoading(true);
 
     try {
-      // 1. Try unified backend login first
-      let authSucceeded = false;
-      try {
-        const apiUrl = import.meta.env.VITE_EVALUATION_API_URL || 'http://localhost:8000';
-        const backendRes = await fetch(`${apiUrl}/api/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: cleanId, password: targetPwd }),
-        });
-
-        if (backendRes.ok) {
-          const resData = await backendRes.json();
-          if (resData.session?.access_token) {
-            await supabase.auth.setSession({
-              access_token: resData.session.access_token,
-              refresh_token: resData.session.refresh_token,
-            });
-          }
-          if (resData.profile) {
-            if (!['student', 'faculty'].includes(resData.profile.role)) {
-              throw new Error('Account has an unrecognized or unauthorized role. Access denied.');
-            }
-            onLoginSuccess(resData.profile);
-            authSucceeded = true;
-            return;
-          }
-        } else {
-          const errJson = await backendRes.json().catch(() => ({}));
-          if (errJson.detail) {
-            throw new Error(errJson.detail);
-          }
-        }
-      } catch (backendErr) {
-        // If backend returned explicit authentication error, propagate it directly without fallback
-        if (backendErr.message && (
-          backendErr.message.includes('not recognized') ||
-          backendErr.message.includes('Invalid password') ||
-          backendErr.message.includes('Access denied') ||
-          backendErr.message.includes('unrecognized')
-        )) {
-          throw backendErr;
-        }
-        console.warn('Backend auth endpoint unavailable, falling back to direct Supabase lookup:', backendErr);
-      }
-
-      if (authSucceeded) return;
-
-      // 2. Direct Supabase Fallback:
-      let targetEmail = null;
-      let targetRole = null;
-
-      // Try RPC first if available
-      try {
-        const { data: rosterUser } = await supabase
-          .rpc('lookup_user_by_identifier', { p_identifier: cleanId });
-        if (rosterUser && rosterUser.length > 0) {
-          targetEmail = rosterUser[0].email;
-          targetRole = rosterUser[0].role;
-        }
-      } catch {
-        // RPC might not be present, fallback to deterministic mapping
-      }
-
-      // If RPC did not find or failed, map canonical institutional IDs
-      if (!targetEmail) {
-        if (cleanId.includes('@')) {
-          targetEmail = cleanId.toLowerCase();
-        } else if (cleanId.startsWith('GHR2025AI')) {
-          const num = cleanId.replace(/^GHR2025AI(\d+)$/, '$1');
-          targetEmail = `student${num}@college.edu`;
-          targetRole = 'student';
-        } else if (cleanId.startsWith('FAC')) {
-          const num = cleanId.replace(/^FAC(\d+)$/, '$1');
-          targetEmail = `faculty${num}@college.edu`;
-          targetRole = 'faculty';
-        }
-      }
-
-      if (!targetEmail) {
-        throw new Error('Institutional ID not recognized in college database. Access denied.');
-      }
-
-      if (targetRole && !['student', 'faculty'].includes(targetRole)) {
-        throw new Error('Account has an unrecognized or unauthorized role. Access denied.');
-      }
-
-      // 3. Authenticate against Supabase Auth (Normal login must NOT create users)
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: targetEmail,
-        password: targetPwd,
+      // 1. Unified backend login: validates against institutional_roster & Supabase Auth
+      const apiUrl = import.meta.env.VITE_EVALUATION_API_URL || 'http://localhost:8000';
+      const backendRes = await fetch(`${apiUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: cleanId, password: targetPwd }),
       });
 
-      if (authError) {
-        if (authError.message?.toLowerCase().includes('invalid login credentials')) {
-          throw new Error('Invalid password for this institutional account. Please check your credentials.');
+      if (backendRes.ok) {
+        const resData = await backendRes.json();
+        if (resData.session?.access_token) {
+          await supabase.auth.setSession({
+            access_token: resData.session.access_token,
+            refresh_token: resData.session.refresh_token,
+          });
         }
-        throw authError;
+        if (resData.profile) {
+          if (!['student', 'faculty'].includes(resData.profile.role)) {
+            throw new Error('Account has an unrecognized or unauthorized role. Access denied.');
+          }
+          onLoginSuccess(resData.profile);
+          return;
+        }
+      } else {
+        const errJson = await backendRes.json().catch(() => ({}));
+        throw new Error(errJson.detail || 'Authentication failed. Please check your credentials.');
       }
-
-      if (!data?.user) {
-        throw new Error('Authentication session could not be established.');
-      }
-
-      // 4. Retrieve verified profile strictly from the database - never trust client input
-      const { data: profile, error: profError } = await supabase
-        .from('profiles')
-        .select('*, batches(name), departments(name)')
-        .eq('id', data.user.id)
-        .single();
-
-      if (profError || !profile) {
-        throw new Error('Verified profile not found in college database. Access denied.');
-      }
-
-      const verifiedRole = profile.role;
-      if (!verifiedRole || !['student', 'faculty'].includes(verifiedRole)) {
-        throw new Error('User profile has an unrecognized or unauthorized role. Access denied.');
-      }
-
-      const activeUser = {
-        id: profile.id,
-        email: profile.email,
-        identifier: profile.identifier || cleanId,
-        name: profile.full_name || rosterEntry.full_name || 'Member',
-        role: verifiedRole,
-        batchName: profile.batches?.name || 'Unassigned',
-        status: profile.status || 'active',
-      };
-
-      onLoginSuccess(activeUser);
     } catch (err) {
       setErrorMsg(err.message || 'Authentication failed. Please check credentials.');
     } finally {

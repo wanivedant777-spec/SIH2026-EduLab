@@ -960,16 +960,8 @@ def institutional_login(req: AuthLoginRequest):
         "Content-Type": "application/json"
     }
 
-    # 1. Lookup the identifier in the institutional roster (support PRN, alias, or email)
-    resolved_id = clean_id
-    if clean_id in ("STUDENT001", "STUDENT_001", "STUDENT", "STUDENT1"):
-        resolved_id = "GHR2025AI001"
-    elif clean_id in ("FACULTY001", "FACULTY_001", "FACULTY", "FACULTY1"):
-        resolved_id = "FAC001"
-    elif re.match(r"^GHR2025(\d{3})$", clean_id):
-        resolved_id = re.sub(r"^GHR2025(\d{3})$", r"GHR2025AI\1", clean_id)
-
-    roster_url = f"{supabase_url}/rest/v1/institutional_roster?or=(identifier.eq.{resolved_id},identifier.eq.{clean_id},email.eq.{clean_id.lower()})&select=*,batches(name),departments(name)"
+    # 1. Lookup the identifier strictly in the institutional roster by identifier or email
+    roster_url = f"{supabase_url}/rest/v1/institutional_roster?or=(identifier.eq.{clean_id},email.eq.{clean_id.lower()})&select=*,batches(name),departments(name)"
     try:
         res = requests.get(roster_url, headers=admin_headers, timeout=10)
     except Exception as e:
