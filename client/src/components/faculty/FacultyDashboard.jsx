@@ -32,6 +32,7 @@ import CreateAssignmentModal from './CreateAssignmentModal';
 import SubmissionsQueue from './SubmissionsQueue';
 import GradingModal from './GradingModal';
 import AuditLogDrawer from './AuditLogDrawer';
+import FacultyStudent360View from './FacultyStudent360View';
 import Button from '../ui/Button';
 import {
   getFacultySubjects,
@@ -110,6 +111,14 @@ export default function FacultyDashboard({
   const [studentsPerformanceFilter, setStudentsPerformanceFilter] = useState('all');
   const [studentsStatusFilter, setStudentsStatusFilter] = useState('all');
   const [studentsSort, setStudentsSort] = useState('name');
+  const [selectedStudent, setSelectedStudent] = useState(null);
+
+  // Reset selected student when navigating away from students
+  useEffect(() => {
+    if (activeNav !== 'students') {
+      setSelectedStudent(null);
+    }
+  }, [activeNav]);
 
   const showNotification = useCallback((text) => {
     setToastMessage(text);
@@ -1053,7 +1062,11 @@ export default function FacultyDashboard({
                       </div>
                       <button
                         className="fd-attention-action"
-                        onClick={() => onNavigate && onNavigate('students')}
+                        onClick={() => {
+                          const enriched = enrichedStudents.find((e) => e.id === st.id) || st;
+                          setSelectedStudent(enriched);
+                          if (onNavigate) onNavigate('students');
+                        }}
                       >
                         <Eye size={12} />
                         View
@@ -1228,7 +1241,17 @@ export default function FacultyDashboard({
             STUDENTS VIEW — Enriched Student Cohort
             ========================================================= */}
         {hasContext && activeNav === 'students' && (
-          <section className="fs-root">
+          selectedStudent ? (
+            <FacultyStudent360View
+              student={selectedStudent}
+              submissions={submissions}
+              practicals={subjectPracticals.length > 0 ? subjectPracticals : assignments.map((a) => a.practical).filter(Boolean)}
+              batchName={selectedBatch?.name || 'Batch A'}
+              onBack={() => setSelectedStudent(null)}
+              onOpenGrading={handleOpenGrading}
+            />
+          ) : (
+            <section className="fs-root">
             {/* ── Page Header ──────────────────────────────────── */}
             <div className="fs-header">
               <div className="fs-header-text">
@@ -1459,8 +1482,8 @@ export default function FacultyDashboard({
                           <td>
                             <button
                               className="fs-view-btn"
-                              onClick={() => onNavigate && onNavigate('submissions')}
-                              title={`View submissions for ${st.name}`}
+                              onClick={() => setSelectedStudent(st)}
+                              title={`View Student 360 profile for ${st.name}`}
                             >
                               <Eye size={12} />
                               View Student
@@ -1521,7 +1544,7 @@ export default function FacultyDashboard({
 
                       <button
                         className="fs-card-action"
-                        onClick={() => onNavigate && onNavigate('submissions')}
+                        onClick={() => setSelectedStudent(st)}
                       >
                         <Eye size={12} />
                         View Student
@@ -1532,6 +1555,7 @@ export default function FacultyDashboard({
               </>
             )}
           </section>
+          )
         )}
 
         {/* =========================================================
