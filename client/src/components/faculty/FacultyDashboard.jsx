@@ -34,6 +34,7 @@ import GradingModal from './GradingModal';
 import AuditLogDrawer from './AuditLogDrawer';
 import FacultyStudent360View from './FacultyStudent360View';
 import FacultySubmissionReviewView from './FacultySubmissionReviewView';
+import FacultyAnalyticsView from './FacultyAnalyticsView';
 import Button from '../ui/Button';
 import {
   getFacultySubjects,
@@ -1632,94 +1633,24 @@ export default function FacultyDashboard({
         )}
 
         {/* =========================================================
-            ANALYTICS VIEW
+            ANALYTICS & PRACTICAL INSIGHTS VIEW
             ========================================================= */}
         {hasContext && activeNav === 'analytics' && (
-          <section className="faculty-workflow-step">
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap: '16px',
-                marginBottom: '20px',
-              }}
-            >
-              <Card surface="white" style={{ padding: '18px 20px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                  Total Batch Submissions
-                </div>
-                <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--text-primary)', marginTop: '4px' }}>
-                  {submissions.length}
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Batch {selectedBatch.name} · {selectedSubject.code}
-                </div>
-              </Card>
-
-              <Card surface="white" style={{ padding: '18px 20px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                  10-Mark Rubrics Evaluated
-                </div>
-                <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--success)', marginTop: '4px' }}>
-                  {gradedSubmissionsCount}{' '}
-                  <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-muted)' }}>
-                    / {submissions.length}
-                  </span>
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  {submissions.length > 0 ? `${Math.round((gradedSubmissionsCount / submissions.length) * 100)}% graded` : 'No submissions'}
-                </div>
-              </Card>
-
-              <Card surface="white" style={{ padding: '18px 20px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                  Avg Auto-Coding Score
-                </div>
-                <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--primary)', marginTop: '4px' }}>
-                  {avgBatchCodingMarks}{' '}
-                  <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-muted)' }}>
-                    / 3.0 M
-                  </span>
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Judge0 automated pass average
-                </div>
-              </Card>
-
-              <Card surface="white" style={{ padding: '18px 20px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                  Focus / Blur Telemetry Flags
-                </div>
-                <div style={{ fontSize: '26px', fontWeight: 700, color: flaggedCount > 0 ? 'var(--warning)' : 'var(--text-primary)', marginTop: '4px' }}>
-                  {flaggedCount}
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Integrity blur events logged
-                </div>
-              </Card>
-            </div>
-
-            <Card surface="white" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-                <div>
-                  <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                    AICTE Institutional Gradebook Export
-                  </h3>
-                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                    Generate official CSV format gradebook including Student PRN, Name, 3M Auto-Code, 5M Journal, and 2M Viva marks.
-                  </p>
-                </div>
-                <Button
-                  variant="primary"
-                  icon={Download}
-                  onClick={handleExportCSV}
-                  disabled={submissions.length === 0}
-                >
-                  Download CSV Gradebook
-                </Button>
-              </div>
-            </Card>
-          </section>
+          <FacultyAnalyticsView
+            subject={selectedSubject}
+            batch={selectedBatch}
+            submissions={submissions}
+            practicals={subjectPracticals.length > 0 ? subjectPracticals : assignments.map((a) => a.practical).filter(Boolean)}
+            assignments={assignments}
+            uniqueStudents={uniqueStudents}
+            studentsNeedingAttention={studentsNeedingAttention}
+            isLoading={isLoadingItems}
+            onSelectStudent={(st) => {
+              setSelectedStudent(st);
+              if (onNavigate) onNavigate('students');
+            }}
+            onExportCSV={handleExportCSV}
+          />
         )}
             </>
           )
