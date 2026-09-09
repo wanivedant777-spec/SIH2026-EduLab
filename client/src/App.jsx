@@ -526,6 +526,12 @@ export default function App() {
 
       // Refresh live submissions in background
       getSubmissions(currentUser.id).then((fresh) => setSubmissions(fresh)).catch(() => {});
+
+      // Direct transition to Evaluation & Feedback flow
+      setTimeout(() => {
+        setActiveNav('submissions');
+        setStudentView('submissions');
+      }, 600);
     } catch (err) {
       console.error('Submission failed:', err);
       addToast(`Submission error: ${err.message}`, 'danger');
@@ -545,6 +551,7 @@ export default function App() {
       // Refresh submissions
       const freshSubs = await getSubmissions();
       setSubmissions(freshSubs);
+      setIsGradingDrawerOpen(false);
     } catch (err) {
       console.error('Grading error:', err);
       addToast(`Failed to record grade: ${err.message}`, 'danger');
@@ -665,7 +672,18 @@ export default function App() {
         ) : activeNav === 'submissions' ? (
           <StudentSubmissionsView
             submissions={submissions}
-            onContinuePractical={handleOpenWorkspace}
+            currentPractical={currentPractical}
+            practicals={practicals}
+            onRetryPractical={handleOpenWorkspace}
+            onReviewConcept={(p) => {
+              if (p) handleSelectPractical(p);
+              setActiveNav('learning');
+            }}
+            onOpenVisualization={(p) => {
+              if (p) handleSelectPractical(p);
+              setActiveNav('visualizations');
+            }}
+            onContinueLearning={() => setActiveNav('practicals')}
           />
         ) : activeNav === 'progress' ? (
           <StudentProgressView
