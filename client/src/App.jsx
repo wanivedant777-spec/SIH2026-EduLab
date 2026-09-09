@@ -627,6 +627,7 @@ export default function App() {
           <StudentLearningView
             practical={currentPractical}
             practicals={practicals}
+            submissions={submissions}
             onSelectPractical={handleSelectPractical}
             onGoToWorkspace={handleOpenWorkspace}
             selectedSubject={selectedSubject}

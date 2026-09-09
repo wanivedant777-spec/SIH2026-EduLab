@@ -1,10 +1,42 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { RotateCw, Sparkles, Compass } from 'lucide-react';
 
-export default function Hero3DObject({ practical, onInteract }) {
+export default function Hero3DObject({
+  practical,
+  onInteract,
+  controlledStep = null,
+  onStepChange = null,
+  isPlaying = true,
+  playbackSpeed = 1,
+  activeNodeId = null,
+  visitedNodeIds = [],
+  hideOverlays = false,
+}) {
   const canvasRef = useRef(null);
-  const [isRotating, setIsRotating] = useState(true);
+  const [isRotating, setIsRotating] = useState(isPlaying);
   const [activeStep, setActiveStep] = useState(0);
+
+  const propsRef = useRef({
+    isRotating,
+    isPlaying,
+    playbackSpeed,
+    controlledStep,
+    onStepChange,
+    activeNodeId,
+    visitedNodeIds,
+  });
+
+  useEffect(() => {
+    propsRef.current = {
+      isRotating,
+      isPlaying,
+      playbackSpeed,
+      controlledStep,
+      onStepChange,
+      activeNodeId,
+      visitedNodeIds,
+    };
+  });
 
   // Animation & 3D state refs to avoid re-renders during 60fps loop
   const stateRef = useRef({
@@ -155,18 +187,28 @@ export default function Hero3DObject({ practical, onInteract }) {
       ctx.clearRect(0, 0, width, height);
 
       const state = stateRef.current;
+      const p = propsRef.current;
 
       // Inertia and auto-rotation
-      if (isRotating && !state.isDragging) {
-        state.targetAngleY += 0.006;
+      if (p.isPlaying && p.isRotating && !state.isDragging) {
+        state.targetAngleY += 0.005 * p.playbackSpeed;
       }
       state.angleX += (state.targetAngleX - state.angleX) * 0.1;
       state.angleY += (state.targetAngleY - state.angleY) * 0.1;
 
       // Pulse traversal animation
-      state.pulseProgress = (state.pulseProgress + 0.008) % 1;
-      const currentStep = Math.floor(state.pulseProgress * 7);
-      setActiveStep(currentStep);
+      let currentStep = activeStep;
+      if (p.controlledStep !== null && p.controlledStep !== undefined) {
+        currentStep = p.controlledStep;
+        state.pulseProgress = currentStep / 7;
+      } else if (p.isPlaying) {
+        state.pulseProgress = (state.pulseProgress + 0.008 * p.playbackSpeed) % 1;
+        currentStep = Math.floor(state.pulseProgress * 7);
+        if (currentStep !== activeStep) {
+          setActiveStep(currentStep);
+          if (p.onStepChange) p.onStepChange(currentStep);
+        }
+      }
 
       const centerX = width / 2;
       const centerY = height / 2;
@@ -265,16 +307,29 @@ export default function Hero3DObject({ practical, onInteract }) {
         ctx.arc(node.screenX, node.screenY, radius * 2.2, 0, Math.PI * 2);
         ctx.fill();
 
+        const isActive = p.activeNodeId !== null && p.activeNodeId !== undefined
+          ? node.id === p.activeNodeId
+          : (node.order !== undefined ? node.order === currentStep : node.id === currentStep);
+        const isVisited = Array.isArray(p.visitedNodeIds) && p.visitedNodeIds.includes(node.id);
+
         // Node Core Body (Paper white surface)
-        ctx.fillStyle = '#FFFFFF';
+        ctx.fillStyle = isActive ? '#EFF6FF' : isVisited ? '#F0FDF4' : '#FFFFFF';
         ctx.beginPath();
         ctx.arc(node.screenX, node.screenY, radius, 0, Math.PI * 2);
         ctx.fill();
 
         // Border
         const isRoot = node.id === 0;
-        ctx.strokeStyle = isRoot ? '#74805A' : 'rgba(116, 128, 90, 0.45)';
-        ctx.lineWidth = isRoot ? 2.2 : 1.2;
+        if (isActive) {
+          ctx.strokeStyle = '#1D4ED8';
+          ctx.lineWidth = 2.8;
+        } else if (isVisited) {
+          ctx.strokeStyle = '#10B981';
+          ctx.lineWidth = 2.0;
+        } else {
+          ctx.strokeStyle = isRoot ? '#1D4ED8' : 'rgba(116, 128, 90, 0.45)';
+          ctx.lineWidth = isRoot ? 2.2 : 1.2;
+        }
         ctx.stroke();
 
         // Top subtle highlight inside node
@@ -301,7 +356,8 @@ export default function Hero3DObject({ practical, onInteract }) {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [isRotating]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Mouse / Touch Drag Handlers for 3D Perspective Rotation
   const handleMouseDown = (e) => {
@@ -378,40 +434,42 @@ export default function Hero3DObject({ practical, onInteract }) {
       {/* 3D Canvas */}
       <canvas ref={canvasRef} className="hero-3d-canvas" />
 
-      {/* Top Floating Badge */}
-      <div className="hero-3d-tag">
-        <Sparkles size={12} color="var(--accent-text)" />
-        <span>3D {practical?.category || 'Algorithm Projection'}</span>
-      </div>
+      {/* Optional Overlays when not embedded in comprehensive controller */}
+      {!hideOverlays && (
+        <>
+          <div className="hero-3d-tag">
+            <Sparkles size={12} color="var(--accent-text)" />
+            <span>3D {practical?.category || 'Algorithm Projection'}</span>
+          </div>
 
-      {/* Traversal Pulse Feedback */}
-      <div className="hero-3d-traversal-step">
-        <span className="step-label">Live Traversal:</span>
-        <span className="step-val">Step {activeStep + 1} of 7 (Inorder)</span>
-      </div>
+          <div className="hero-3d-traversal-step">
+            <span className="step-label">Live Traversal:</span>
+            <span className="step-val">Step {activeStep + 1} of 7 (Inorder)</span>
+          </div>
 
-      {/* Interactive Controls Pill */}
-      <div className="hero-3d-controls">
-        <button
-          type="button"
-          className={`hero-3d-btn ${isRotating ? 'active' : ''}`}
-          onClick={toggleRotation}
-          title={isRotating ? 'Pause Orbit' : 'Resume Orbit'}
-        >
-          <RotateCw size={12} />
-          <span>{isRotating ? 'Orbit' : 'Paused'}</span>
-        </button>
+          <div className="hero-3d-controls">
+            <button
+              type="button"
+              className={`hero-3d-btn ${isRotating ? 'active' : ''}`}
+              onClick={toggleRotation}
+              title={isRotating ? 'Pause Orbit' : 'Resume Orbit'}
+            >
+              <RotateCw size={12} />
+              <span>{isRotating ? 'Orbit' : 'Paused'}</span>
+            </button>
 
-        <button
-          type="button"
-          className="hero-3d-btn"
-          onClick={resetPerspective}
-          title="Reset Camera View"
-        >
-          <Compass size={12} />
-          <span>Reset</span>
-        </button>
-      </div>
+            <button
+              type="button"
+              className="hero-3d-btn"
+              onClick={resetPerspective}
+              title="Reset Camera View"
+            >
+              <Compass size={12} />
+              <span>Reset</span>
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
