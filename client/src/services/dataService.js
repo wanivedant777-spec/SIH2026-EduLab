@@ -1181,6 +1181,7 @@ export async function getFacultySubmissionsForBatch(subjectId, batchId) {
       rollNumber: profile.identifier || 'Unassigned',
       batchName: profile.batches?.name || 'Unassigned',
       practicalId: s.practical_id,
+      practicalNumber: practical.practical_number || null,
       practicalTitle: practical.title
         ? practical.title.startsWith('Practical')
           ? practical.title

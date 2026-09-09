@@ -742,6 +742,7 @@ export default function App() {
           error={dataError}
           onRetry={loadData}
           onSaveGrade={handleSaveGrade}
+          onNavigate={handleNavigate}
         />
       )}
 
