@@ -47,6 +47,7 @@ export default function App() {
   const [activeNav, setActiveNav] = useState('dashboard');
   const [_studentView, setStudentView] = useState('dashboard'); // 'dashboard' | 'workspace'
   const [practicals, setPracticals] = useState([]);
+  const [syllabusPracticals, setSyllabusPracticals] = useState([]);
   const [currentPractical, setCurrentPractical] = useState(null);
   const [isPracticalModalOpen, setIsPracticalModalOpen] = useState(false);
   const [isAuditDrawerOpen, setIsAuditDrawerOpen] = useState(false);
@@ -202,6 +203,14 @@ export default function App() {
         // 5. Fetch student's own submissions
         const subs = await getSubmissions(currentUser.id);
         setSubmissions(subs);
+
+        // 6. Fetch full curriculum practicals for progress mapping
+        try {
+          const allPrs = await getPracticals();
+          setSyllabusPracticals(allPrs || []);
+        } catch {
+          // Fallback to practicals
+        }
       } else if (currentUser.role === 'faculty') {
         // Fetch all practicals for faculty
         const prs = await getPracticals();
@@ -688,8 +697,19 @@ export default function App() {
         ) : activeNav === 'progress' ? (
           <StudentProgressView
             submissions={submissions}
-            practicals={practicals}
+            practicals={syllabusPracticals.length > 0 ? syllabusPracticals : practicals}
+            currentPractical={currentPractical}
             studentProfile={studentProfile}
+            onSelectPractical={handleOpenWorkspace}
+            onReviewConcept={(p) => {
+              if (p) handleSelectPractical(p);
+              setActiveNav('learning');
+            }}
+            onOpenVisualization={(p) => {
+              if (p) handleSelectPractical(p);
+              setActiveNav('visualizations');
+            }}
+            onContinueLearning={() => setActiveNav('practicals')}
           />
         ) : (
           <StudentDashboard
