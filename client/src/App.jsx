@@ -13,6 +13,9 @@ import { supabase } from './supabaseClient';
 import { evaluateSubmission } from './services/api';
 import {
   getPracticals,
+  getPracticalsBySubject,
+  getStudentSubjects,
+  getStudentAssignments,
   getSubmissions,
   submitStudentPractical,
   gradeSubmission,
@@ -28,6 +31,12 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [studentProfile, setStudentProfile] = useState(null);
   const [facultyAllocations, setFacultyAllocations] = useState([]);
+
+  // Subject Selection State (Subject-First Flow)
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [isLoadingSubjects, setIsLoadingSubjects] = useState(false);
+  const [assignments, setAssignments] = useState([]);
 
   // Navigation State
   const [studentView, setStudentView] = useState('dashboard'); // 'dashboard' | 'workspace'
@@ -111,6 +120,9 @@ export default function App() {
         setCurrentUser(null);
         setStudentProfile(null);
         setFacultyAllocations([]);
+        setSubjects([]);
+        setSelectedSubject(null);
+        setAssignments([]);
         setStudentView('dashboard');
         setPracticals([]);
         setSubmissions([]);
@@ -128,21 +140,9 @@ export default function App() {
     setDataError(null);
 
     try {
-      // 1. Fetch practicals
-      const prs = await getPracticals();
-      setPracticals(prs);
-
-      if (prs.length > 0) {
-        setCurrentPractical((prev) => {
-          if (!prev) return prs[0];
-          const matched = prs.find((p) => p.id === prev.id);
-          return matched || prs[0];
-        });
-      }
-
-      // 2. Role-specific queries
+      // Role-specific queries
       if (currentUser.role === 'student') {
-        // Fetch student profile hierarchy
+        // 1. Fetch student profile hierarchy
         try {
           const prof = await getStudentProfile(currentUser.id);
           if (prof) setStudentProfile(prof);
@@ -150,10 +150,64 @@ export default function App() {
           console.warn('Student profile query notice:', e.message);
         }
 
-        // Fetch student's own submissions
+        // 2. Fetch real subjects backed by database practicals
+        setIsLoadingSubjects(true);
+        let studentSubjects = [];
+        try {
+          studentSubjects = await getStudentSubjects(currentUser.id);
+          setSubjects(studentSubjects);
+        } catch (e) {
+          console.warn('Student subjects query notice:', e.message);
+          throw e;
+        } finally {
+          setIsLoadingSubjects(false);
+        }
+
+        // 3. Resolve active subject
+        let activeSubj = selectedSubject;
+        if (!activeSubj || !studentSubjects.some((s) => s.id === activeSubj.id)) {
+          activeSubj = studentSubjects.length > 0 ? studentSubjects[0] : null;
+          setSelectedSubject(activeSubj);
+        }
+
+        // 4. Fetch assignments strictly for the student's batch and active subject
+        if (activeSubj) {
+          const studentAssignments = await getStudentAssignments(currentUser.id, activeSubj.id);
+          setAssignments(studentAssignments);
+          const prs = studentAssignments.map((a) => a.practical);
+          setPracticals(prs);
+
+          if (prs.length > 0) {
+            setCurrentPractical((prev) => {
+              if (!prev) return prs[0];
+              const matched = prs.find((p) => p.id === prev.id);
+              return matched || prs[0];
+            });
+          } else {
+            setCurrentPractical(null);
+          }
+        } else {
+          setAssignments([]);
+          setPracticals([]);
+          setCurrentPractical(null);
+        }
+
+        // 5. Fetch student's own submissions
         const subs = await getSubmissions(currentUser.id);
         setSubmissions(subs);
       } else if (currentUser.role === 'faculty') {
+        // Fetch all practicals for faculty
+        const prs = await getPracticals();
+        setPracticals(prs);
+
+        if (prs.length > 0) {
+          setCurrentPractical((prev) => {
+            if (!prev) return prs[0];
+            const matched = prs.find((p) => p.id === prev.id);
+            return matched || prs[0];
+          });
+        }
+
         // Fetch faculty allocations
         try {
           const allocs = await getFacultyAllocations(currentUser.id);
@@ -173,7 +227,7 @@ export default function App() {
     } finally {
       setIsLoadingData(false);
     }
-  }, [currentUser, addToast]);
+  }, [currentUser, selectedSubject, addToast]);
 
   useEffect(() => {
     if (currentUser) {
@@ -199,10 +253,47 @@ export default function App() {
     setCurrentUser(null);
     setStudentProfile(null);
     setFacultyAllocations([]);
+    setSubjects([]);
+    setSelectedSubject(null);
     setStudentView('dashboard');
     setPracticals([]);
     setSubmissions([]);
     addToast('Signed out successfully.', 'info');
+  };
+
+  // Switch selected subject and load only that subject's practicals/assignments
+  const handleSelectSubject = async (subject) => {
+    if (!subject || subject.id === selectedSubject?.id) return;
+    setSelectedSubject(subject);
+    setIsLoadingData(true);
+    try {
+      if (currentUser?.role === 'student') {
+        const studentAssignments = await getStudentAssignments(currentUser.id, subject.id);
+        setAssignments(studentAssignments);
+        const prs = studentAssignments.map((a) => a.practical);
+        setPracticals(prs);
+        if (prs.length > 0) {
+          setCurrentPractical(prs[0]);
+        } else {
+          setCurrentPractical(null);
+        }
+        addToast(`Loaded ${subject.name || subject.code} assignments`, 'info');
+      } else {
+        const prs = await getPracticalsBySubject(subject.id);
+        setPracticals(prs);
+        if (prs.length > 0) {
+          setCurrentPractical(prs[0]);
+        } else {
+          setCurrentPractical(null);
+        }
+        addToast(`Loaded ${subject.name || subject.code} practicals`, 'info');
+      }
+    } catch (err) {
+      console.error('Failed to load subject data:', err);
+      addToast(`Failed to load data: ${err.message}`, 'danger');
+    } finally {
+      setIsLoadingData(false);
+    }
   };
 
   // Update starter code when active practical changes
@@ -346,7 +437,7 @@ export default function App() {
 
       setStdoutMessage(
         `[Evaluator Microservice Response]\n` +
-        `Status: ${data.status} (${data.is_simulation ? 'DEMO / SIMULATION' : 'EXECUTED'})\n` +
+        `Status: ${data.status}\n` +
         `Compiler: ${compilerFlags[language] || compilerFlags.cpp}\n\n` +
         `Test Cases: ${data.passed_test_cases}/${data.total_test_cases} Passed (${Math.round(data.pass_percentage || 0)}%)\n` +
         `Coding Marks: ${data.coding_marks_awarded} / 3.0 M\n` +
@@ -367,8 +458,11 @@ export default function App() {
       }
     } catch (err) {
       console.error('Run code error:', err);
+      setEvaluationResult(null);
       setEvaluationPhase('failed');
-      addToast('Evaluation notice: Evaluation service unavailable.', 'warning');
+      const msg = err.message || 'Code execution service is currently unavailable.';
+      setStdoutMessage(`[Execution Service Offline / Error]\n${msg}\n\nPlease ensure the compiler service is running and retry.`);
+      addToast(msg, 'danger');
     } finally {
       setIsRunning(false);
     }
@@ -473,10 +567,13 @@ export default function App() {
           <StudentDashboard
             currentUser={currentUser}
             studentProfile={studentProfile}
-            submissions={submissions}
+            subjects={subjects}
+            selectedSubject={selectedSubject}
+            onSelectSubject={handleSelectSubject}
+            assignments={assignments}
             currentPractical={currentPractical}
-            practicals={practicals}
             isLoading={isLoadingData}
+            isLoadingSubjects={isLoadingSubjects}
             error={dataError}
             onRetry={loadData}
             onContinuePractical={(prac) => {

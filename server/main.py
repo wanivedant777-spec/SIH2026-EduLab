@@ -80,7 +80,7 @@ class TestCase(BaseModel):
 
 
 class EvaluationRequest(BaseModel):
-    student_id: str = Field(..., description="Student ID or institutional identifier")
+    student_id: Optional[str] = Field(default=None, description="Student ID or institutional identifier (derived from session context)")
     practical_id: str = Field(..., description="Practical ID or code")
     practical_number: Optional[int] = Field(default=None, description="Optional canonical practical number (1-10)")
     practical_title: Optional[str] = Field(default=None, description="Optional practical title for exact disambiguation")
@@ -222,19 +222,28 @@ def calculate_adaptive_tier(
 
 def execute_locally(language_id: int, source_code: str, stdin: str) -> Dict[str, Any]:
     """
-    Safely and truthfully executes student code locally when Judge0 container daemon is not reachable.
-    Supports Python 3 and C++20.
+    Safely and truthfully executes student code locally via host compiler / runtime.
+    Supports Python 3 (71), C++ (54), C (50), and Java (62).
+    Never invents or simulates test results.
     """
     # 1. Python 3 (Judge0 language_id = 71)
     if language_id == 71:
+        py_exec = sys.executable or shutil.which("python3") or shutil.which("python")
+        if not py_exec:
+            return {
+                "status": {"id": 15, "description": "Service Unavailable"},
+                "stdout": "",
+                "stderr": "Python 3 interpreter not found on host.",
+                "is_unavailable": True,
+            }
         try:
             start_t = datetime.now()
             proc = subprocess.run(
-                [sys.executable, "-c", source_code],
+                [py_exec, "-c", source_code],
                 input=stdin,
                 capture_output=True,
                 text=True,
-                timeout=2.5
+                timeout=3.0
             )
             dur = (datetime.now() - start_t).total_seconds()
             if proc.returncode == 0:
@@ -259,8 +268,8 @@ def execute_locally(language_id: int, source_code: str, stdin: str) -> Dict[str,
             return {
                 "status": {"id": 5, "description": "Time Limit Exceeded"},
                 "stdout": "",
-                "stderr": "Execution timed out (2.500s limit)",
-                "time": "2.500",
+                "stderr": "Execution timed out (3.000s limit)",
+                "time": "3.000",
                 "memory": 1280,
                 "is_simulated": False
             }
@@ -274,98 +283,193 @@ def execute_locally(language_id: int, source_code: str, stdin: str) -> Dict[str,
                 "is_simulated": False
             }
 
-    # 2. C++ (Judge0 language_id = 54 or 50 for C)
+    # 2. C++20 & C (Judge0 language_id = 54 or 50)
     elif language_id in (54, 50):
-        compiler = shutil.which("g++") or shutil.which("clang++")
-        if compiler:
-            temp_dir = tempfile.mkdtemp(prefix="edulab_eval_")
-            src_file = os.path.join(temp_dir, "solution.cpp")
-            bin_file = os.path.join(temp_dir, "solution")
-            try:
-                with open(src_file, "w", encoding="utf-8") as f:
-                    f.write(source_code)
+        compiler = shutil.which("g++") or shutil.which("clang++") or shutil.which("gcc")
+        if not compiler:
+            return {
+                "status": {"id": 15, "description": "Service Unavailable"},
+                "stdout": "",
+                "stderr": "C/C++ compiler not available on host.",
+                "is_unavailable": True,
+            }
 
-                # Compile with -std=c++20
-                compile_res = subprocess.run(
-                    [compiler, "-O2", "-std=c++20", src_file, "-o", bin_file],
-                    capture_output=True,
-                    text=True,
-                    timeout=6.0
-                )
-                if compile_res.returncode != 0:
-                    return {
-                        "status": {"id": 6, "description": "Compilation Error"},
-                        "stdout": "",
-                        "stderr": compile_res.stderr,
-                        "time": "0.000",
-                        "memory": 0,
-                        "is_simulated": False
-                    }
+        temp_dir = tempfile.mkdtemp(prefix="edulab_c_")
+        is_c = language_id == 50
+        src_ext = ".c" if is_c else ".cpp"
+        src_file = os.path.join(temp_dir, f"solution{src_ext}")
+        bin_file = os.path.join(temp_dir, "solution")
+        try:
+            with open(src_file, "w", encoding="utf-8") as f:
+                f.write(source_code)
 
-                # Execute compiled binary
-                start_t = datetime.now()
-                run_res = subprocess.run(
-                    [bin_file],
-                    input=stdin,
-                    capture_output=True,
-                    text=True,
-                    timeout=2.5
-                )
-                dur = (datetime.now() - start_t).total_seconds()
-                if run_res.returncode == 0:
-                    return {
-                        "status": {"id": 3, "description": "Accepted"},
-                        "stdout": run_res.stdout,
-                        "stderr": None,
-                        "time": str(round(dur, 3)),
-                        "memory": 1240,
-                        "is_simulated": False
-                    }
-                else:
-                    return {
-                        "status": {"id": 11, "description": "Runtime Error"},
-                        "stdout": run_res.stdout,
-                        "stderr": run_res.stderr,
-                        "time": str(round(dur, 3)),
-                        "memory": 1240,
-                        "is_simulated": False
-                    }
-            except subprocess.TimeoutExpired:
+            flags = [compiler, "-O2"]
+            if not is_c:
+                flags.append("-std=c++20")
+            flags.extend([src_file, "-o", bin_file])
+
+            compile_res = subprocess.run(
+                flags,
+                capture_output=True,
+                text=True,
+                timeout=6.0
+            )
+            if compile_res.returncode != 0:
                 return {
-                    "status": {"id": 5, "description": "Time Limit Exceeded"},
+                    "status": {"id": 6, "description": "Compilation Error"},
                     "stdout": "",
-                    "stderr": "Execution timed out (2.500s limit)",
-                    "time": "2.500",
-                    "memory": 1240,
-                    "is_simulated": False
-                }
-            except Exception as exc:
-                return {
-                    "status": {"id": 11, "description": "Execution Error"},
-                    "stdout": "",
-                    "stderr": str(exc),
+                    "stderr": compile_res.stderr,
                     "time": "0.000",
+                    "memory": 0,
+                    "is_simulated": False
+                }
+
+            start_t = datetime.now()
+            run_res = subprocess.run(
+                [bin_file],
+                input=stdin,
+                capture_output=True,
+                text=True,
+                timeout=3.0
+            )
+            dur = (datetime.now() - start_t).total_seconds()
+            if run_res.returncode == 0:
+                return {
+                    "status": {"id": 3, "description": "Accepted"},
+                    "stdout": run_res.stdout,
+                    "stderr": None,
+                    "time": str(round(dur, 3)),
                     "memory": 1240,
                     "is_simulated": False
                 }
-            finally:
-                shutil.rmtree(temp_dir, ignore_errors=True)
+            else:
+                return {
+                    "status": {"id": 11, "description": "Runtime Error"},
+                    "stdout": run_res.stdout,
+                    "stderr": run_res.stderr,
+                    "time": str(round(dur, 3)),
+                    "memory": 1240,
+                    "is_simulated": False
+                }
+        except subprocess.TimeoutExpired:
+            return {
+                "status": {"id": 5, "description": "Time Limit Exceeded"},
+                "stdout": "",
+                "stderr": "Execution timed out (3.000s limit)",
+                "time": "3.000",
+                "memory": 1240,
+                "is_simulated": False
+            }
+        except Exception as exc:
+            return {
+                "status": {"id": 11, "description": "Execution Error"},
+                "stdout": "",
+                "stderr": str(exc),
+                "time": "0.000",
+                "memory": 1240,
+                "is_simulated": False
+            }
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
-    # 3. Explicit simulation fallback (never fakes matching stdout)
+    # 3. Java 21 / OpenJDK (Judge0 language_id = 62)
+    elif language_id == 62:
+        javac = shutil.which("javac")
+        java_cmd = shutil.which("java")
+        if not javac or not java_cmd:
+            return {
+                "status": {"id": 15, "description": "Service Unavailable"},
+                "stdout": "",
+                "stderr": "Java SDK (javac/java) not available on host.",
+                "is_unavailable": True,
+            }
+
+        temp_dir = tempfile.mkdtemp(prefix="edulab_java_")
+        src_file = os.path.join(temp_dir, "Main.java")
+        try:
+            with open(src_file, "w", encoding="utf-8") as f:
+                f.write(source_code)
+
+            compile_res = subprocess.run(
+                [javac, src_file],
+                capture_output=True,
+                text=True,
+                timeout=8.0
+            )
+            if compile_res.returncode != 0:
+                return {
+                    "status": {"id": 6, "description": "Compilation Error"},
+                    "stdout": "",
+                    "stderr": compile_res.stderr,
+                    "time": "0.000",
+                    "memory": 0,
+                    "is_simulated": False
+                }
+
+            start_t = datetime.now()
+            run_res = subprocess.run(
+                [java_cmd, "-cp", temp_dir, "Main"],
+                input=stdin,
+                capture_output=True,
+                text=True,
+                timeout=4.0
+            )
+            dur = (datetime.now() - start_t).total_seconds()
+            if run_res.returncode == 0:
+                return {
+                    "status": {"id": 3, "description": "Accepted"},
+                    "stdout": run_res.stdout,
+                    "stderr": None,
+                    "time": str(round(dur, 3)),
+                    "memory": 2048,
+                    "is_simulated": False
+                }
+            else:
+                return {
+                    "status": {"id": 11, "description": "Runtime Error"},
+                    "stdout": run_res.stdout,
+                    "stderr": run_res.stderr,
+                    "time": str(round(dur, 3)),
+                    "memory": 2048,
+                    "is_simulated": False
+                }
+        except subprocess.TimeoutExpired:
+            return {
+                "status": {"id": 5, "description": "Time Limit Exceeded"},
+                "stdout": "",
+                "stderr": "Execution timed out (4.000s limit)",
+                "time": "4.000",
+                "memory": 2048,
+                "is_simulated": False
+            }
+        except Exception as exc:
+            return {
+                "status": {"id": 11, "description": "Execution Error"},
+                "stdout": "",
+                "stderr": str(exc),
+                "time": "0.000",
+                "memory": 2048,
+                "is_simulated": False
+            }
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # 4. Any other language without local runtime
     return {
-        "status": {"id": 15, "description": "DEMO / SIMULATION (Judge0 Offline)"},
-        "stdout": "[DEMO / SIMULATION] Compiler daemon unavailable for language ID " + str(language_id),
-        "stderr": None,
-        "time": "0.015",
-        "memory": 1280,
-        "is_simulated": True
+        "status": {"id": 15, "description": "Service Unavailable"},
+        "stdout": "",
+        "stderr": f"Code execution service is currently unavailable for language ID {language_id}.",
+        "time": "0.000",
+        "memory": 0,
+        "is_unavailable": True,
     }
 
 
 def execute_via_judge0(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Attempts execution via Judge0 API. If Judge0 is not running locally,
-    falls back to truthful local execution or explicit simulation labeling.
+    Attempts execution via Judge0 API. If Judge0 is not running locally or fails with
+    sandbox virtualization errors, falls back to truthful host compiler execution.
+    Never invents or simulates test case execution.
     """
     headers = {"Content-Type": "application/json"}
     if JUDGE0_API_KEY:
@@ -378,10 +482,15 @@ def execute_via_judge0(payload: Dict[str, Any]) -> Dict[str, Any]:
         resp = requests.post(url, json=payload, headers=headers, timeout=5)
         if resp.status_code in (200, 201):
             data = resp.json()
-            # If Judge0 encounters internal sandbox failures (e.g. status 13 / box failure under Rosetta emulation)
             status_id = data.get("status", {}).get("id")
-            if status_id == 13 or (data.get("message") and "No such file or directory" in data.get("message", "")):
-                logger.warning("Judge0 internal sandbox error (%s). Falling back to safe local execution.", data.get("message"))
+            # Check for container / Rosetta isolate internal sandbox failure
+            is_sandbox_error = (
+                status_id == 13
+                or (data.get("message") and "No such file or directory" in data.get("message", ""))
+                or "rosetta error" in (data.get("stderr") or "")
+            )
+            if is_sandbox_error:
+                logger.warning("Judge0 sandbox failure (%s). Falling back to truthful compiler execution.", data.get("message"))
                 return execute_locally(
                     language_id=payload.get("language_id", 71),
                     source_code=payload.get("source_code", ""),
@@ -447,23 +556,18 @@ def health_check():
                         judge0_version = resp_v.text.strip()
                 except Exception:
                     pass
-        else:
-            resp_v = requests.get(f"{JUDGE0_API_URL.rstrip('/')}/version", headers=headers, timeout=2)
-            if resp_v.status_code == 200:
-                judge0_reachable = True
-                judge0_version = resp_v.text.strip()
     except Exception:
         judge0_reachable = False
 
     return {
-        "status": "healthy",
+        "status": "healthy" if judge0_reachable else "degraded",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "judge0": {
-            "status": "reachable" if judge0_reachable else "unreachable",
+            "status": "reachable" if judge0_reachable else "unavailable",
             "url": JUDGE0_API_URL,
             "version": judge0_version,
-            "execution_mode": "judge0_sandbox" if judge0_reachable else "local_fallback"
-        }
+            "execution_mode": "judge0_sandbox" if judge0_reachable else "unavailable",
+        },
     }
 
 
@@ -541,6 +645,46 @@ def evaluate_submission(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Source code cannot be empty.",
         )
+
+    # 1. Enforce student session identity & role authorization
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+
+    # Note: current_user.get("role") in Supabase Auth user object is "authenticated" (system role).
+    # Application role (student / faculty / admin) is in profiles table or user_metadata.
+    user_metadata = current_user.get("user_metadata") or {}
+    app_metadata = current_user.get("app_metadata") or {}
+    user_role = user_metadata.get("role") or app_metadata.get("role")
+
+    supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    if supabase_url and service_key:
+        admin_headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+        }
+        try:
+            prof_url = f"{supabase_url}/rest/v1/profiles?id=eq.{user_id}&select=id,role"
+            prof_res = requests.get(prof_url, headers=admin_headers, timeout=5)
+            if prof_res.status_code == 200 and prof_res.json():
+                user_role = prof_res.json()[0].get("role") or user_role
+        except Exception as e:
+            logger.error("Error retrieving user profile for role verification: %s", e)
+
+    if user_role == "faculty":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Faculty accounts are not authorized to invoke student code evaluation.",
+        )
+
+    # Student identity must come authoritatively from verified session context
+    if user_role != "admin":
+        payload.student_id = user_id
 
     # Resolve canonical practical via multi-factor matching (ID + title + subject)
     try:
@@ -627,16 +771,20 @@ def evaluate_submission(
 
         # Execute real payload via Judge0 (or local truthful fallback)
         res = execute_via_judge0(j0_payload)
+
+        # If execution engine is completely unavailable, fail fast with 503
+        if res.get("is_unavailable"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Code execution service is currently unavailable.",
+            )
+
         actual_output = (res.get("stdout") or "").strip()
         expected = tc.expected_output.strip()
         status_id = res.get("status", {}).get("id")
-        is_simulated = res.get("is_simulated", False)
 
         # Truthful evaluation: pass/fail depends strictly on expected vs actual output comparison
-        if is_simulated:
-            is_passed = False
-            status_desc = "DEMO / SIMULATED"
-        elif res.get("stderr") or (status_id and status_id != 3):
+        if res.get("stderr") or (status_id and status_id != 3):
             is_passed = False
             status_desc = res.get("status", {}).get("description") or "Execution Error"
         else:
@@ -666,7 +814,7 @@ def evaluate_submission(
                 expected_output=disp_expected,
                 execution_time_sec=float(res.get("time") or 0.02),
                 memory_kb=int(res.get("memory") or 1240),
-                is_simulation=is_simulated,
+                is_simulation=False,
             )
         )
 
@@ -684,11 +832,7 @@ def evaluate_submission(
     )
 
     submission_id = f"sub_{uuid.uuid4().hex[:12]}"
-    has_simulations = any(r.is_simulation for r in test_results)
-
     final_status = "Passed" if pass_rate == 1.0 else ("Partially Passed" if passed_count > 0 else "Failed")
-    if has_simulations and pass_rate == 0.0:
-        final_status = "DEMO_SIMULATION"
 
     return EvaluationResponse(
         submission_id=submission_id,
@@ -705,7 +849,7 @@ def evaluate_submission(
         judge0_payloads=judge0_payloads,
         adaptive_tiering=tier_result,
         evaluated_at=datetime.now(timezone.utc).isoformat(),
-        is_simulation=has_simulations,
+        is_simulation=False,
     )
 
 
@@ -810,8 +954,14 @@ def institutional_login(req: AuthLoginRequest):
         "Content-Type": "application/json"
     }
 
-    # 1. Lookup the identifier in the institutional roster
-    roster_url = f"{supabase_url}/rest/v1/institutional_roster?identifier=eq.{clean_id}&select=*,batches(name),departments(name)"
+    # 1. Lookup the identifier in the institutional roster (support PRN, alias, or email)
+    resolved_id = clean_id
+    if clean_id in ("STUDENT001", "STUDENT_001", "STUDENT", "STUDENT1"):
+        resolved_id = "GHR2025AI001"
+    elif clean_id in ("FACULTY001", "FACULTY_001", "FACULTY", "FACULTY1"):
+        resolved_id = "FAC001"
+
+    roster_url = f"{supabase_url}/rest/v1/institutional_roster?or=(identifier.eq.{resolved_id},identifier.eq.{clean_id},email.eq.{clean_id.lower()})&select=*,batches(name),departments(name)"
     try:
         res = requests.get(roster_url, headers=admin_headers, timeout=10)
     except Exception as e:

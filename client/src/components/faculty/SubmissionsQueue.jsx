@@ -251,8 +251,14 @@ export default function SubmissionsQueue({
                 <td colSpan={9} className="queue-empty-cell">
                   <div className="queue-empty-state">
                     <BookOpen size={24} color="var(--text-muted)" />
-                    <span className="empty-title">No submissions match the current filters</span>
-                    <span className="empty-desc">Try clearing your search query or switching status filters</span>
+                    <span className="empty-title">
+                      {submissions.length === 0 ? 'No submissions for this batch.' : 'No submissions match the current filters'}
+                    </span>
+                    <span className="empty-desc">
+                      {submissions.length === 0
+                        ? 'Submissions from enrolled students in this cohort will appear here automatically for 10-mark grading.'
+                        : 'Try clearing your search query or switching status filters.'}
+                    </span>
                   </div>
                 </td>
               </tr>

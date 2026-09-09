@@ -8,6 +8,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Install system dependencies including C/C++ compiler and Java runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    default-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies with caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

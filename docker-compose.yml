@@ -170,6 +170,8 @@ services:
         required: false
     networks:
       - edulabs-net
+    volumes:
+      - ./server:/app
     depends_on:
       judge0-server:
         condition: service_healthy

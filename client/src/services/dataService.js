@@ -209,6 +209,340 @@ public class Main {
 };
 
 /**
+ * Fetch subjects for the student backed by real database records.
+ * Queries public.subjects joined with linked practical counts.
+ * Filters out subjects that do not have active practical records.
+ * Throws explicit error on failure - never falls back silently to fake data.
+ */
+export async function getStudentSubjects(_userId = null) {
+  const { data, error } = await supabase
+    .from('subjects')
+    .select(`
+      id,
+      code,
+      name,
+      semester,
+      practicals (id)
+    `)
+    .order('code', { ascending: true });
+
+  if (error) {
+    console.error('❌ Supabase getStudentSubjects error:', error.message, error.details);
+    throw new Error(`Database error loading student subjects: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  // Filter to only subjects backed by real practicals in the database
+  return data
+    .map((s) => ({
+      id: s.id,
+      code: s.code,
+      name: s.name,
+      semester: s.semester,
+      practicalCount: Array.isArray(s.practicals) ? s.practicals.length : 0,
+    }))
+    .filter((s) => s.practicalCount > 0);
+}
+
+/**
+ * Fetch assigned practicals for a student based on:
+ * student -> batch -> subject -> assignment -> practical
+ *
+ * Uses:
+ * - authenticated user (resolved via userId or session)
+ * - student batch (from verified profiles record; never from client input)
+ * - selected subject
+ *
+ * Returns normalized assignment cards with lifecycle states:
+ * 'Not Started' | 'In Progress' | 'Submitted' | 'Under Review' | 'Graded'
+ */
+export async function getStudentAssignments(userId, subjectId) {
+  if (!userId || !subjectId) return [];
+
+  // 1. Resolve student's verified batch_id server-side from profiles (never trust client input)
+  const { data: profile, error: profError } = await supabase
+    .from('profiles')
+    .select('id, batch_id, batches(id, name)')
+    .eq('id', userId)
+    .single();
+
+  if (profError) {
+    console.error('❌ Failed to resolve student batch for assignments:', profError.message);
+    throw new Error(`Failed to load student batch assignment context: ${profError.message}`);
+  }
+
+  if (!profile?.batch_id) {
+    return [];
+  }
+
+  const batchId = profile.batch_id;
+  const batchName = profile.batches?.name || 'Unassigned';
+
+  // 2. Query assignments table strictly filtered by student batch and subject
+  const { data: assignments, error: assignError } = await supabase
+    .from('assignments')
+    .select(`
+      id,
+      title,
+      subject_id,
+      batch_id,
+      practical_id,
+      created_at,
+      subjects (id, code, name),
+      batches (id, name),
+      practicals (
+        id,
+        subject_id,
+        practical_number,
+        title,
+        aim,
+        theory_content,
+        flowchart_url,
+        video_url,
+        starter_codes,
+        max_coding_marks,
+        max_writeup_marks,
+        max_viva_marks,
+        created_at,
+        test_cases (id, input_data, expected_output, is_sample, is_parameterized)
+      )
+    `)
+    .eq('batch_id', batchId)
+    .eq('subject_id', subjectId)
+    .order('created_at', { ascending: true });
+
+  if (assignError) {
+    console.error('❌ Supabase getStudentAssignments error:', assignError.message);
+    throw new Error(`Database error loading batch assignments: ${assignError.message}`);
+  }
+
+  if (!assignments || assignments.length === 0) {
+    return [];
+  }
+
+  // 3. Query student's submissions for these practicals to determine real state
+  const practicalIds = assignments.map((a) => a.practical_id).filter(Boolean);
+  const submissionsMap = {};
+
+  if (practicalIds.length > 0) {
+    const { data: subs, error: subError } = await supabase
+      .from('submissions')
+      .select(`
+        id,
+        practical_id,
+        status,
+        passed_test_cases,
+        total_test_cases,
+        created_at,
+        evaluations (
+          id,
+          marks_performing,
+          marks_writing,
+          marks_viva,
+          marks_total,
+          faculty_feedback,
+          graded_at
+        )
+      `)
+      .eq('student_id', userId)
+      .in('practical_id', practicalIds)
+      .order('created_at', { ascending: false });
+
+    if (!subError && subs) {
+      for (const s of subs) {
+        if (!submissionsMap[s.practical_id]) {
+          submissionsMap[s.practical_id] = s;
+        }
+      }
+    }
+  }
+
+  // 4. Map to structured assignment cards
+  return assignments
+    .filter((a) => a.practicals)
+    .map((a) => {
+      const p = a.practicals;
+      const sub = submissionsMap[p.id];
+      const ev = Array.isArray(sub?.evaluations) ? sub.evaluations[0] : sub?.evaluations;
+
+      // Map lifecycle state strictly from actual database state
+      let state = 'Not Started';
+      let score = null;
+      let totalMarks = null;
+
+      if (ev && (ev.marks_total != null || ev.marks_performing != null)) {
+        state = 'Graded';
+        totalMarks = ev.marks_total != null
+          ? parseFloat(ev.marks_total)
+          : Math.round(((parseFloat(ev.marks_performing || 0) + parseFloat(ev.marks_writing || 0) + parseFloat(ev.marks_viva || 0)) * 10)) / 10;
+        score = `${totalMarks.toFixed(1)} / 10.0 M`;
+      } else if (sub) {
+        const rawStatus = (sub.status || '').toLowerCase();
+        if (rawStatus === 'graded' || rawStatus === 'completed') {
+          state = ev ? 'Graded' : 'Under Review';
+        } else if (rawStatus === 'under_review' || rawStatus === 'pending_review' || rawStatus === 'submitted') {
+          state = 'Submitted';
+        } else {
+          state = 'In Progress';
+        }
+      }
+
+      // Format canonical starter codes & practical details
+      const theory = p.theory_content || {};
+      const testCases = (p.test_cases || []).sort((x, y) => (y.is_sample ? 1 : 0) - (x.is_sample ? 1 : 0));
+      const dbCodes = p.starter_codes || {};
+      const canonicalFallback = CANONICAL_STARTER_CODES[p.practical_number] || {};
+      const resolvedStarterCodes = {
+        cpp: dbCodes.cpp && dbCodes.cpp !== '...' ? dbCodes.cpp : (canonicalFallback.cpp || dbCodes.cpp || ''),
+        python: dbCodes.python && dbCodes.python !== '...' ? dbCodes.python : (canonicalFallback.python || dbCodes.python || ''),
+        java: dbCodes.java && dbCodes.java !== '...' ? dbCodes.java : (canonicalFallback.java || dbCodes.java || ''),
+        c: dbCodes.c && dbCodes.c !== '...' ? dbCodes.c : (canonicalFallback.cpp || dbCodes.c || ''),
+      };
+
+      const normalizedPractical = {
+        id: p.id,
+        practicalNumber: p.practical_number,
+        title: p.title.startsWith('Practical') ? p.title : `Practical ${String(p.practical_number).padStart(2, '0')}: ${p.title}`,
+        courseCode: `${a.subjects?.code || 'LAB'}: ${a.subjects?.name || 'Lab Course'}`,
+        subjectId: a.subject_id,
+        subjectCode: a.subjects?.code || '',
+        subjectName: a.subjects?.name || '',
+        aim: p.aim,
+        category: theory.category || 'Algorithms & Data Structures',
+        nepLevel: theory.nepLevel || 'Level 5 (Curricular Practical)',
+        avgTime: theory.avgTime || '30 Mins',
+        difficulty: theory.difficulty || (p.practical_number <= 3 ? 'Easy' : p.practical_number <= 6 ? 'Medium' : 'Hard'),
+        algorithm: Array.isArray(theory.algorithm) ? theory.algorithm : [],
+        pseudocode: theory.pseudocode || '',
+        flowchartUrl: p.flowchart_url,
+        videoUrl: p.video_url,
+        starterCodes: resolvedStarterCodes,
+        testCases: testCases.map((tc) => ({
+          id: tc.id,
+          input_data: tc.input_data,
+          expected_output: tc.expected_output,
+          is_sample: tc.is_sample,
+          is_parameterized: tc.is_parameterized,
+        })),
+        maxCodingMarks: parseFloat(p.max_coding_marks || 3.0),
+        maxWriteupMarks: parseFloat(p.max_writeup_marks || 5.0),
+        maxVivaMarks: parseFloat(p.max_viva_marks || 2.0),
+      };
+
+      return {
+        assignmentId: a.id,
+        assignmentTitle: a.title,
+        batchId: a.batch_id,
+        batchName: a.batches?.name || batchName,
+        subjectId: a.subject_id,
+        subjectCode: a.subjects?.code || '',
+        subjectName: a.subjects?.name || '',
+        practicalId: p.id,
+        practical: normalizedPractical,
+        assignedAt: a.created_at,
+        dueDate: null,
+        state,
+        score,
+        totalMarks,
+        submission: sub || null,
+        feedback: ev?.faculty_feedback || '',
+      };
+    });
+}
+
+/**
+ * Fetch practicals for a specific subject from Supabase canonical catalog joined with test cases.
+ * Returns only practicals belonging to the specified subjectId.
+ * Throws explicit error on failure - never falls back silently to fake data.
+ */
+export async function getPracticalsBySubject(subjectId) {
+  if (!subjectId) return [];
+
+  const { data, error } = await supabase
+    .from('practicals')
+    .select(`
+      id,
+      subject_id,
+      practical_number,
+      title,
+      aim,
+      theory_content,
+      flowchart_url,
+      video_url,
+      starter_codes,
+      max_coding_marks,
+      max_writeup_marks,
+      max_viva_marks,
+      created_at,
+      subjects (id, code, name),
+      test_cases (id, input_data, expected_output, is_sample, is_parameterized)
+    `)
+    .eq('subject_id', subjectId)
+    .order('practical_number', { ascending: true });
+
+  if (error) {
+    console.error('❌ Supabase getPracticalsBySubject error:', error.message, error.details);
+    throw new Error(`Database error loading practicals for subject: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  return data.map((p) => {
+    const theory = p.theory_content || {};
+    const testCases = (p.test_cases || []).sort((a, b) => (b.is_sample ? 1 : 0) - (a.is_sample ? 1 : 0));
+    const subjectInfo = p.subjects || {};
+    const courseCode = subjectInfo.code && subjectInfo.name
+      ? `${subjectInfo.code}: ${subjectInfo.name}`
+      : subjectInfo.code || 'CS201P: Data Structures';
+
+    // Resolve canonical starter code if database contains placeholder '...'
+    const dbCodes = p.starter_codes || {};
+    const canonicalFallback = CANONICAL_STARTER_CODES[p.practical_number] || {};
+    const resolvedStarterCodes = {
+      cpp: dbCodes.cpp && dbCodes.cpp !== '...' ? dbCodes.cpp : (canonicalFallback.cpp || dbCodes.cpp || ''),
+      python: dbCodes.python && dbCodes.python !== '...' ? dbCodes.python : (canonicalFallback.python || dbCodes.python || ''),
+      java: dbCodes.java && dbCodes.java !== '...' ? dbCodes.java : (canonicalFallback.java || dbCodes.java || ''),
+      c: dbCodes.c && dbCodes.c !== '...' ? dbCodes.c : (canonicalFallback.cpp || dbCodes.c || ''),
+    };
+
+    return {
+      id: p.id,
+      practicalNumber: p.practical_number,
+      title: p.title.startsWith('Practical') ? p.title : `Practical ${String(p.practical_number).padStart(2, '0')}: ${p.title}`,
+      courseCode,
+      subjectId: p.subject_id,
+      subjectCode: subjectInfo.code || '',
+      subjectName: subjectInfo.name || '',
+      aim: p.aim,
+      category: theory.category || 'Algorithms & Data Structures',
+      nepLevel: theory.nepLevel || 'Level 5 (Curricular Practical)',
+      avgTime: theory.avgTime || '30 Mins',
+      difficulty: theory.difficulty || (p.practical_number <= 3 ? 'Easy' : p.practical_number <= 6 ? 'Medium' : 'Hard'),
+      algorithm: Array.isArray(theory.algorithm) ? theory.algorithm : [],
+      pseudocode: theory.pseudocode || '',
+      flowchartUrl: p.flowchart_url,
+      videoUrl: p.video_url,
+      starterCodes: resolvedStarterCodes,
+      testCases: testCases.map((tc) => ({
+        id: tc.id,
+        input_data: tc.input_data,
+        expected_output: tc.expected_output,
+        is_sample: tc.is_sample,
+        is_parameterized: tc.is_parameterized,
+      })),
+      maxCodingMarks: parseFloat(p.max_coding_marks || 3.0),
+      maxWriteupMarks: parseFloat(p.max_writeup_marks || 5.0),
+      maxVivaMarks: parseFloat(p.max_viva_marks || 2.0),
+    };
+  });
+}
+
+/**
  * Fetch all practicals from Supabase canonical catalog joined with test cases.
  * Throws explicit error on failure - never falls back silently to fake data.
  */
@@ -229,6 +563,7 @@ export async function getPracticals() {
       max_writeup_marks,
       max_viva_marks,
       created_at,
+      subjects (id, code, name),
       test_cases (id, input_data, expected_output, is_sample, is_parameterized)
     `)
     .order('practical_number', { ascending: true });
@@ -245,6 +580,10 @@ export async function getPracticals() {
   return data.map((p) => {
     const theory = p.theory_content || {};
     const testCases = (p.test_cases || []).sort((a, b) => (b.is_sample ? 1 : 0) - (a.is_sample ? 1 : 0));
+    const subjectInfo = p.subjects || {};
+    const courseCode = subjectInfo.code && subjectInfo.name
+      ? `${subjectInfo.code}: ${subjectInfo.name}`
+      : subjectInfo.code || 'CS201P: Data Structures';
 
     // Resolve canonical starter code if database contains placeholder '...'
     const dbCodes = p.starter_codes || {};
@@ -260,8 +599,10 @@ export async function getPracticals() {
       id: p.id,
       practicalNumber: p.practical_number,
       title: p.title.startsWith('Practical') ? p.title : `Practical ${String(p.practical_number).padStart(2, '0')}: ${p.title}`,
-      courseCode: 'CS201P: Data Structures',
+      courseCode,
       subjectId: p.subject_id,
+      subjectCode: subjectInfo.code || '',
+      subjectName: subjectInfo.name || '',
       aim: p.aim,
       category: theory.category || 'Algorithms & Data Structures',
       nepLevel: theory.nepLevel || 'Level 5 (Trees & Invariants)',
@@ -387,8 +728,18 @@ export async function getSubmissions(studentId = null) {
  * Never silently swallows write errors.
  */
 export async function submitStudentPractical(subData) {
+  // Verify that the submitter matches the authenticated session user
+  const { data: authData } = await supabase.auth.getUser();
+  const sessionUserId = authData?.user?.id;
+  if (!sessionUserId) {
+    throw new Error('Authentication required to submit practical.');
+  }
+
+  // Prevent client spoofing: always bind to authenticated session
+  const studentId = sessionUserId;
+
   const insertPayload = {
-    student_id: subData.studentId,
+    student_id: studentId,
     practical_id: subData.practicalId,
     language_id: subData.languageId || (subData.language === 'python' ? 71 : subData.language === 'java' ? 62 : subData.language === 'c' ? 50 : 54),
     source_code: subData.sourceCode,
@@ -521,7 +872,19 @@ export async function getStudentProfile(userId) {
     throw new Error(`Failed to load student profile: ${error.message}`);
   }
 
-  return profile;
+  if (!profile) return null;
+
+  return {
+    ...profile,
+    batchName: profile.batches?.name || null,
+    divisionName: profile.divisions?.name || null,
+    academicYear: profile.divisions?.academic_year || null,
+    semester: profile.divisions?.semester || null,
+    departmentName: profile.departments?.name || null,
+    departmentCode: profile.departments?.code || null,
+    collegeName: profile.colleges?.name || null,
+    collegeCode: profile.colleges?.code || null,
+  };
 }
 
 /**
@@ -547,6 +910,303 @@ export async function getFacultyAllocations(facultyId) {
   }
 
   return data || [];
+}
+
+/**
+ * Extract unique subjects allocated to a faculty member.
+ */
+export async function getFacultySubjects(facultyId) {
+  if (!facultyId) return [];
+  const allocs = await getFacultyAllocations(facultyId);
+  const subjectMap = new Map();
+
+  allocs.forEach((a) => {
+    if (a.subjects && !subjectMap.has(a.subjects.id)) {
+      subjectMap.set(a.subjects.id, {
+        id: a.subjects.id,
+        code: a.subjects.code,
+        name: a.subjects.name,
+        semester: a.subjects.semester,
+        batchCount: allocs.filter((al) => al.subject_id === a.subjects.id).length,
+      });
+    }
+  });
+
+  return Array.from(subjectMap.values());
+}
+
+/**
+ * Extract unique batches allocated to a faculty member for a specific subject.
+ */
+export async function getFacultyBatchesForSubject(facultyId, subjectId) {
+  if (!facultyId || !subjectId) return [];
+  const allocs = await getFacultyAllocations(facultyId);
+  const batchesMap = new Map();
+
+  allocs
+    .filter((a) => a.subject_id === subjectId && a.batches)
+    .forEach((a) => {
+      if (!batchesMap.has(a.batches.id)) {
+        batchesMap.set(a.batches.id, {
+          id: a.batches.id,
+          name: a.batches.name,
+          divisionId: a.batches.division_id,
+          divisionName: a.batches.divisions?.name,
+          academicYear: a.batches.divisions?.academic_year,
+          semester: a.batches.divisions?.semester,
+        });
+      }
+    });
+
+  return Array.from(batchesMap.values());
+}
+
+/**
+ * Fetch assignments created for a specific faculty, subject, and batch.
+ * Calculates live submission count for each assignment.
+ */
+export async function getFacultyAssignments(facultyId, subjectId, batchId) {
+  if (!facultyId || !subjectId || !batchId) return [];
+
+  const { data: assignments, error } = await supabase
+    .from('assignments')
+    .select(`
+      id,
+      faculty_id,
+      subject_id,
+      batch_id,
+      practical_id,
+      title,
+      created_at,
+      practicals (id, title, practical_number, aim, max_coding_marks, max_writeup_marks, max_viva_marks),
+      subjects (id, code, name),
+      batches (id, name)
+    `)
+    .eq('faculty_id', facultyId)
+    .eq('subject_id', subjectId)
+    .eq('batch_id', batchId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('❌ Supabase getFacultyAssignments error:', error.message);
+    throw new Error(`Failed to load assignments: ${error.message}`);
+  }
+
+  if (!assignments || assignments.length === 0) return [];
+
+  // Fetch real submission counts for these practicals in this batch
+  const practicalIds = assignments.map((a) => a.practical_id).filter(Boolean);
+  const submissionCounts = {};
+
+  if (practicalIds.length > 0) {
+    try {
+      const { data: subs, error: subErr } = await supabase
+        .from('submissions')
+        .select('id, practical_id, profiles!inner(batch_id)')
+        .in('practical_id', practicalIds)
+        .eq('profiles.batch_id', batchId);
+
+      if (!subErr && subs) {
+        subs.forEach((s) => {
+          submissionCounts[s.practical_id] = (submissionCounts[s.practical_id] || 0) + 1;
+        });
+      }
+    } catch (e) {
+      console.warn('Submission counts resolution notice:', e);
+    }
+  }
+
+  return assignments.map((a) => ({
+    id: a.id,
+    title: a.title,
+    facultyId: a.faculty_id,
+    subjectId: a.subject_id,
+    batchId: a.batch_id,
+    practicalId: a.practical_id,
+    practicalNumber: a.practicals?.practical_number,
+    practicalTitle: a.practicals?.title || a.title,
+    batchName: a.batches?.name || 'Unassigned',
+    subjectCode: a.subjects?.code || '',
+    subjectName: a.subjects?.name || '',
+    status: a.status || 'active',
+    dueAt: a.due_at || null,
+    createdAt: a.created_at,
+    submissionCount: submissionCounts[a.practical_id] || 0,
+  }));
+}
+
+/**
+ * Create a new assignment through authoritative data service.
+ */
+export async function createFacultyAssignment({ facultyId, subjectId, batchId, practicalId, title, dueAt }) {
+  if (!facultyId || !subjectId || !batchId || !practicalId) {
+    throw new Error('All assignment fields (Faculty, Subject, Batch, Practical) are required.');
+  }
+
+  const payload = {
+    faculty_id: facultyId,
+    subject_id: subjectId,
+    batch_id: batchId,
+    practical_id: practicalId,
+    title: (title || '').trim(),
+  };
+
+  if (dueAt) {
+    payload.due_at = dueAt;
+  }
+
+  let result = await supabase
+    .from('assignments')
+    .insert(payload)
+    .select(`
+      id,
+      title,
+      faculty_id,
+      subject_id,
+      batch_id,
+      practical_id,
+      created_at,
+      practicals (id, title, practical_number),
+      batches (id, name),
+      subjects (id, code, name)
+    `)
+    .single();
+
+  if (result.error) {
+    // Retry without due_at if column due_at is not present in target schema
+    if (result.error.message?.includes('due_at') && payload.due_at) {
+      delete payload.due_at;
+      result = await supabase
+        .from('assignments')
+        .insert(payload)
+        .select(`
+          id,
+          title,
+          faculty_id,
+          subject_id,
+          batch_id,
+          practical_id,
+          created_at,
+          practicals (id, title, practical_number),
+          batches (id, name),
+          subjects (id, code, name)
+        `)
+        .single();
+    }
+  }
+
+  if (result.error) {
+    console.error('❌ Failed to create assignment in Supabase:', result.error.message);
+    throw new Error(`Failed to create assignment: ${result.error.message}`);
+  }
+
+  return {
+    id: result.data.id,
+    title: result.data.title,
+    facultyId: result.data.faculty_id,
+    subjectId: result.data.subject_id,
+    batchId: result.data.batch_id,
+    practicalId: result.data.practical_id,
+    practicalNumber: result.data.practicals?.practical_number,
+    practicalTitle: result.data.practicals?.title || result.data.title,
+    batchName: result.data.batches?.name || 'Unassigned',
+    subjectCode: result.data.subjects?.code || '',
+    subjectName: result.data.subjects?.name || '',
+    status: 'active',
+    dueAt: dueAt || null,
+    createdAt: result.data.created_at,
+    submissionCount: 0,
+  };
+}
+
+/**
+ * Fetch submissions matching strictly a selected subject and batch.
+ */
+export async function getFacultySubmissionsForBatch(subjectId, batchId) {
+  if (!subjectId || !batchId) return [];
+
+  const { data, error } = await supabase
+    .from('submissions')
+    .select(`
+      id,
+      student_id,
+      practical_id,
+      language_id,
+      source_code,
+      total_test_cases,
+      passed_test_cases,
+      time_spent_seconds,
+      attempt_count,
+      status,
+      created_at,
+      profiles!inner (id, identifier, full_name, role, batch_id, batches(name)),
+      practicals!inner (id, title, practical_number, subject_id),
+      evaluations (id, marks_performing, marks_writing, marks_viva, marks_total, faculty_feedback, graded_by, graded_at)
+    `)
+    .eq('profiles.batch_id', batchId)
+    .eq('practicals.subject_id', subjectId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('❌ Supabase getFacultySubmissionsForBatch error:', error.message);
+    throw new Error(`Database error loading batch submissions: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) return [];
+
+  return data.map((s) => {
+    const ev = Array.isArray(s.evaluations) ? (s.evaluations[0] || {}) : (s.evaluations || {});
+    const profile = s.profiles || {};
+    const practical = s.practicals || {};
+
+    const coding = parseFloat(
+      ev.marks_performing !== undefined && ev.marks_performing !== null
+        ? ev.marks_performing
+        : s.total_test_cases
+        ? ((s.passed_test_cases / s.total_test_cases) * 3.0).toFixed(1)
+        : 0.0
+    );
+    const writing = parseFloat(ev.marks_writing || 0.0);
+    const viva = parseFloat(ev.marks_viva || 0.0);
+    const total = ev.marks_total ? parseFloat(ev.marks_total) : Math.min(10.0, Math.round((coding + writing + viva) * 10) / 10);
+
+    const isGraded = Boolean(ev.graded_at || ev.marks_writing > 0 || ev.marks_viva > 0);
+
+    return {
+      id: s.id,
+      prn: profile.identifier || 'Unassigned',
+      studentId: s.student_id,
+      studentName: profile.full_name || 'Student',
+      rollNumber: profile.identifier || 'Unassigned',
+      batchName: profile.batches?.name || 'Unassigned',
+      practicalId: s.practical_id,
+      practicalTitle: practical.title
+        ? practical.title.startsWith('Practical')
+          ? practical.title
+          : `Practical 0${practical.practical_number || 1}: ${practical.title}`
+        : 'Practical Lab',
+      language: s.language_id === 71 ? 'python' : s.language_id === 62 ? 'java' : s.language_id === 50 ? 'c' : 'cpp',
+      languageName: s.language_id === 71 ? 'Python 3.12' : s.language_id === 62 ? 'Java 21' : s.language_id === 50 ? 'C' : 'C++20',
+      codingMarks: Math.min(3.0, coding),
+      writeupMarks: Math.min(5.0, writing),
+      vivaMarks: Math.min(2.0, viva),
+      totalMarks: Math.min(10.0, total),
+      passRate: s.total_test_cases ? Math.round((s.passed_test_cases / s.total_test_cases) * 100) : 0,
+      passedCount: s.passed_test_cases || 0,
+      totalCount: s.total_test_cases || 0,
+      adaptiveTier: s.passed_test_cases === s.total_test_cases ? 'Advanced' : s.passed_test_cases > 0 ? 'Proficient' : 'Beginner',
+      timeSpentMin: Math.round((s.time_spent_seconds || 0) / 60),
+      focusBlurEvents: 0,
+      status: isGraded ? 'Graded' : 'Pending Review',
+      submittedAt: new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      submittedDate: new Date(s.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+      feedback: ev.faculty_feedback || '',
+      gradedBy: ev.graded_by || null,
+      gradedAt: ev.graded_at || null,
+      sourceCode: s.source_code,
+      createdAt: s.created_at,
+    };
+  });
 }
 
 /**

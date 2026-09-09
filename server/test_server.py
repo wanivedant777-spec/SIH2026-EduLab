@@ -63,15 +63,15 @@ def test_health_endpoint_judge0_reachable(client):
 
 
 def test_health_endpoint_judge0_unreachable(client):
-    """Test /health when Judge0 cannot be contacted (falls back gracefully)."""
+    """Test /health when Judge0 cannot be contacted (reports unavailable status)."""
     with patch("requests.get", side_effect=Exception("Connection refused")):
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "healthy"
-        assert data["judge0"]["status"] == "unreachable"
+        assert data["status"] == "degraded"
+        assert data["judge0"]["status"] == "unavailable"
         assert data["judge0"]["version"] is None
-        assert data["judge0"]["execution_mode"] == "local_fallback"
+        assert data["judge0"]["execution_mode"] == "unavailable"
 
 
 def test_structure_judge0_payload():

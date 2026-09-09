@@ -3,7 +3,7 @@ import { BookOpen, ArrowUpRight, CheckCircle2, Clock, Play, AlertCircle } from '
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
 
-export default function PracticalsList({ practicals = [], submissions = [], currentPracticalId, onSelectPractical }) {
+export default function PracticalsList({ practicals = [], submissions = [], currentPracticalId, onSelectPractical, selectedSubject = null }) {
   const getPracticalMeta = (prac) => {
     const isCurrent = prac.id === currentPracticalId;
     const sub = submissions.find((s) => s.practicalId === prac.id);
@@ -38,18 +38,24 @@ export default function PracticalsList({ practicals = [], submissions = [], curr
     };
   };
 
+  const subjectHeading = selectedSubject
+    ? `${selectedSubject.code ? selectedSubject.code + ': ' : ''}${selectedSubject.name || 'Subject Practicals'}`
+    : 'Curricular Practicals';
+
+  const subjectSubtitle = selectedSubject?.name
+    ? `AICTE & NEP 2020 Accredited Lab Syllabus · ${selectedSubject.code || ''} ${selectedSubject.name}`
+    : 'AICTE & NEP 2020 Accredited Laboratory Syllabus';
+
   return (
-    <div className="dashboard-section practicals-section">
+    <div className="dashboard-section practicals-section" id="curricular-practicals-list">
       <div className="section-header">
         <div>
-          <h2 className="section-title">Curricular Practicals</h2>
-          <p className="section-subtitle">
-            AICTE &amp; NEP 2020 Accredited Lab Syllabus · CS201P Data Structures &amp; Algorithms
-          </p>
+          <h2 className="section-title">{subjectHeading}</h2>
+          <p className="section-subtitle">{subjectSubtitle}</p>
         </div>
         <div className="section-meta-tag">
           <BookOpen size={13} color="var(--accent-text)" />
-          <span>{practicals.length} Experiments Linked</span>
+          <span>{practicals.length} {practicals.length === 1 ? 'Experiment' : 'Experiments'} Linked</span>
         </div>
       </div>
 
@@ -64,7 +70,9 @@ export default function PracticalsList({ practicals = [], submissions = [], curr
           <AlertCircle size={32} color="var(--accent-text)" style={{ margin: '0 auto 12px' }} />
           <h3 style={{ color: 'var(--text-primary)', marginBottom: '6px' }}>No Practicals Found</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-            No curricular practicals are linked for this subject in the live database.
+            {selectedSubject?.name
+              ? `No curricular practicals are linked for ${selectedSubject.name} in the database yet.`
+              : 'No curricular practicals are linked for this subject in the live database.'}
           </p>
         </div>
       ) : (
@@ -72,7 +80,7 @@ export default function PracticalsList({ practicals = [], submissions = [], curr
           {practicals.map((prac) => {
             const meta = getPracticalMeta(prac);
             const isCurrent = meta.isCurrent;
-            const coursePrefix = (prac.courseCode || 'CS201P').split(':')[0];
+            const coursePrefix = prac.subjectCode || (prac.courseCode || selectedSubject?.code || 'LAB').split(':')[0];
 
             return (
               <div
