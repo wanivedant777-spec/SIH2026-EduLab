@@ -12,12 +12,15 @@ import {
   CheckCircle,
   BarChart3,
   TrendingDown,
+  TrendingUp,
   Eye,
   FileText,
   Activity,
   ChevronRight,
   Search,
   X,
+  Filter,
+  ArrowUpDown,
 } from 'lucide-react';
 import Card, { CardHeader, CardTitle, CardContent } from '../ui/Card';
 import Badge from '../ui/Badge';
@@ -101,6 +104,12 @@ export default function FacultyDashboard({
   const [isCreateAssignmentOpen, setIsCreateAssignmentOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Students page filters
+  const [studentsSearch, setStudentsSearch] = useState('');
+  const [studentsPerformanceFilter, setStudentsPerformanceFilter] = useState('all');
+  const [studentsStatusFilter, setStudentsStatusFilter] = useState('all');
+  const [studentsSort, setStudentsSort] = useState('name');
 
   const showNotification = useCallback((text) => {
     setToastMessage(text);
@@ -509,7 +518,7 @@ export default function FacultyDashboard({
       }));
   }, [submissions]);
 
-  // Search filter
+  // Search filter (dashboard)
   const filteredStudents = useMemo(() => {
     if (!searchQuery.trim()) return uniqueStudents;
     const q = searchQuery.toLowerCase();
@@ -519,6 +528,133 @@ export default function FacultyDashboard({
         (st.prn || '').toLowerCase().includes(q)
     );
   }, [uniqueStudents, searchQuery]);
+
+  // ── Enriched Students for Students Page ───────────────────────────────
+  const enrichedStudents = useMemo(() => {
+    const attentionMap = new Map();
+    studentsNeedingAttention.forEach((st) => attentionMap.set(st.id, st.reasons));
+
+    return uniqueStudents.map((st) => {
+      const subs = st.submissions || [];
+      const gradedSubs = subs.filter((s) => s.totalMarks != null);
+      const avgScore = gradedSubs.length > 0
+        ? (gradedSubs.reduce((acc, s) => acc + parseFloat(s.totalMarks), 0) / gradedSubs.length)
+        : null;
+      const avgCoding = subs.length > 0
+        ? (subs.reduce((acc, s) => acc + (parseFloat(s.codingMarks) || 0), 0) / subs.length)
+        : null;
+
+      // Latest submission timestamp
+      const sorted = [...subs].sort((a, b) =>
+        new Date(b.submittedAt || b.createdAt) - new Date(a.submittedAt || a.createdAt)
+      );
+      const latestActivity = sorted[0]?.submittedAt || sorted[0]?.createdAt || null;
+      const latestPractical = sorted[0]?.practicalTitle || sorted[0]?.assignmentTitle || null;
+
+      // Determine learning status
+      const reasons = attentionMap.get(st.id) || [];
+      let learningStatus = 'on-track';
+      if (reasons.length > 0) {
+        learningStatus = 'needs-attention';
+      } else if (avgScore != null && avgScore >= 7.0) {
+        learningStatus = 'on-track';
+      } else if (subs.length >= 2) {
+        // Check trend: compare last 2 submissions
+        const lastTwo = sorted.slice(0, 2);
+        if (lastTwo.length === 2) {
+          const s1 = parseFloat(lastTwo[0]?.codingMarks) || 0;
+          const s0 = parseFloat(lastTwo[1]?.codingMarks) || 0;
+          if (s1 > s0) learningStatus = 'improving';
+        }
+      }
+
+      // Inactive detection
+      if (latestActivity) {
+        const daysSince = (Date.now() - new Date(latestActivity).getTime()) / 86400000;
+        if (daysSince > 14 && subs.length < 2) learningStatus = 'inactive';
+      }
+
+      // Practical progress
+      const completedPracticals = new Set(subs.map((s) => s.practicalId || s.assignmentId)).size;
+
+      return {
+        ...st,
+        avgScore,
+        avgCoding,
+        latestActivity,
+        latestPractical,
+        learningStatus,
+        reasons,
+        completedPracticals,
+      };
+    });
+  }, [uniqueStudents, studentsNeedingAttention]);
+
+  // Students page overview metrics
+  const studentsOverview = useMemo(() => {
+    const total = enrichedStudents.length;
+    const active = enrichedStudents.filter((s) => s.learningStatus !== 'inactive').length;
+    const onTrack = enrichedStudents.filter((s) => s.learningStatus === 'on-track' || s.learningStatus === 'improving').length;
+    const needsAttention = enrichedStudents.filter((s) => s.learningStatus === 'needs-attention').length;
+    return { total, active, onTrack, needsAttention };
+  }, [enrichedStudents]);
+
+  // Filtered & sorted students for Students page
+  const studentsPageList = useMemo(() => {
+    let list = [...enrichedStudents];
+
+    // Search
+    if (studentsSearch.trim()) {
+      const q = studentsSearch.toLowerCase();
+      list = list.filter(
+        (st) =>
+          (st.name || '').toLowerCase().includes(q) ||
+          (st.prn || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Performance filter
+    if (studentsPerformanceFilter !== 'all') {
+      if (studentsPerformanceFilter === 'excellent') {
+        list = list.filter((st) => st.avgScore != null && st.avgScore >= 8.5);
+      } else if (studentsPerformanceFilter === 'proficient') {
+        list = list.filter((st) => st.avgScore != null && st.avgScore >= 7.0 && st.avgScore < 8.5);
+      } else if (studentsPerformanceFilter === 'developing') {
+        list = list.filter((st) => st.avgScore != null && st.avgScore < 7.0);
+      } else if (studentsPerformanceFilter === 'ungraded') {
+        list = list.filter((st) => st.avgScore == null);
+      }
+    }
+
+    // Status filter
+    if (studentsStatusFilter !== 'all') {
+      list = list.filter((st) => st.learningStatus === studentsStatusFilter);
+    }
+
+    // Sort
+    list.sort((a, b) => {
+      switch (studentsSort) {
+        case 'name':
+          return (a.name || '').localeCompare(b.name || '');
+        case 'prn':
+          return (a.prn || '').localeCompare(b.prn || '');
+        case 'score-high':
+          return (b.avgScore || -1) - (a.avgScore || -1);
+        case 'score-low':
+          return (a.avgScore || 999) - (b.avgScore || 999);
+        case 'submissions':
+          return b.submissionsCount - a.submissionsCount;
+        case 'recent':
+          return new Date(b.latestActivity || 0) - new Date(a.latestActivity || 0);
+        case 'attention':
+          return b.reasons.length - a.reasons.length;
+        default:
+          return 0;
+      }
+    });
+
+    return list;
+  }, [enrichedStudents, studentsSearch, studentsPerformanceFilter, studentsStatusFilter, studentsSort]);
 
   // ── Predicates ─────────────────────────────────────────────────────────
   const isDashboard = activeNav === 'dashboard';
@@ -1089,76 +1225,312 @@ export default function FacultyDashboard({
         )}
 
         {/* =========================================================
-            STUDENTS VIEW: Batch Student Roster
+            STUDENTS VIEW — Enriched Student Cohort
             ========================================================= */}
         {hasContext && activeNav === 'students' && (
-          <section className="faculty-workflow-step">
-            <Card surface="white">
-              <CardHeader>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Users size={16} color="var(--primary)" />
-                  <CardTitle as="h2" style={{ fontSize: '15px' }}>
-                    Student Roster · Batch {selectedBatch.name}
-                  </CardTitle>
+          <section className="fs-root">
+            {/* ── Page Header ──────────────────────────────────── */}
+            <div className="fs-header">
+              <div className="fs-header-text">
+                <h2 className="fs-page-title">Students</h2>
+                <p className="fs-page-desc">
+                  {selectedSubject.code} · Batch {selectedBatch.name} — Find students, understand their status, and identify who needs attention.
+                </p>
+              </div>
+            </div>
+
+            {/* ── Filters & Search Bar ─────────────────────────── */}
+            <div className="fs-toolbar">
+              <div className="fs-search-wrap">
+                <Search size={14} className="fs-search-icon" />
+                <input
+                  type="text"
+                  className="fs-search-input"
+                  placeholder="Search by name or PRN…"
+                  value={studentsSearch}
+                  onChange={(e) => setStudentsSearch(e.target.value)}
+                />
+                {studentsSearch && (
+                  <button className="fs-search-clear" onClick={() => setStudentsSearch('')}>
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              <div className="fs-filters">
+                <div className="fs-filter-group">
+                  <Filter size={12} />
+                  <select
+                    className="fs-filter-select"
+                    value={studentsPerformanceFilter}
+                    onChange={(e) => setStudentsPerformanceFilter(e.target.value)}
+                  >
+                    <option value="all">All Performance</option>
+                    <option value="excellent">Excellent (≥ 8.5)</option>
+                    <option value="proficient">Proficient (7.0–8.4)</option>
+                    <option value="developing">Developing (&lt; 7.0)</option>
+                    <option value="ungraded">Not Yet Graded</option>
+                  </select>
                 </div>
-                <Badge variant="primary" size="sm">
-                  {filteredStudents.length} Active Students
-                </Badge>
-              </CardHeader>
-              <CardContent style={{ padding: '0' }}>
-                {filteredStudents.length === 0 ? (
-                  <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    <Users size={28} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
-                    <h3 style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px' }}>
-                      {searchQuery ? 'No students match your search' : 'No Student Submissions Yet'}
-                    </h3>
-                    <p style={{ fontSize: '12.5px', margin: 0 }}>
-                      {searchQuery
-                        ? `No results for "${searchQuery}"`
-                        : `Students enrolled in Batch ${selectedBatch.name} will be cataloged here once practicals are attempted.`
-                      }
-                    </p>
-                  </div>
-                ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px', textAlign: 'left' }}>
+
+                <div className="fs-filter-group">
+                  <select
+                    className="fs-filter-select"
+                    value={studentsStatusFilter}
+                    onChange={(e) => setStudentsStatusFilter(e.target.value)}
+                  >
+                    <option value="all">All Status</option>
+                    <option value="on-track">On Track</option>
+                    <option value="improving">Improving</option>
+                    <option value="needs-attention">Needs Attention</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+
+                <div className="fs-filter-group">
+                  <ArrowUpDown size={12} />
+                  <select
+                    className="fs-filter-select"
+                    value={studentsSort}
+                    onChange={(e) => setStudentsSort(e.target.value)}
+                  >
+                    <option value="name">Sort: Name</option>
+                    <option value="prn">Sort: PRN</option>
+                    <option value="score-high">Score: High → Low</option>
+                    <option value="score-low">Score: Low → High</option>
+                    <option value="submissions">Most Submissions</option>
+                    <option value="recent">Most Recent</option>
+                    <option value="attention">Needs Attention</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Overview Metrics ─────────────────────────────── */}
+            <div className="fs-overview">
+              <div className="fs-stat-card">
+                <div className="fs-stat-icon-wrap fs-stat-icon-primary">
+                  <Users size={14} />
+                </div>
+                <div className="fs-stat-content">
+                  <span className="fs-stat-value">{studentsOverview.total}</span>
+                  <span className="fs-stat-label">Total Students</span>
+                </div>
+              </div>
+              <div className="fs-stat-card">
+                <div className="fs-stat-icon-wrap fs-stat-icon-accent">
+                  <Activity size={14} />
+                </div>
+                <div className="fs-stat-content">
+                  <span className="fs-stat-value">{studentsOverview.active}</span>
+                  <span className="fs-stat-label">Active</span>
+                </div>
+              </div>
+              <div className="fs-stat-card">
+                <div className="fs-stat-icon-wrap fs-stat-icon-success">
+                  <CheckCircle size={14} />
+                </div>
+                <div className="fs-stat-content">
+                  <span className="fs-stat-value">{studentsOverview.onTrack}</span>
+                  <span className="fs-stat-label">On Track</span>
+                </div>
+              </div>
+              <div className="fs-stat-card">
+                <div className="fs-stat-icon-wrap fs-stat-icon-warning">
+                  <AlertTriangle size={14} />
+                </div>
+                <div className="fs-stat-content">
+                  <span className="fs-stat-value">{studentsOverview.needsAttention}</span>
+                  <span className="fs-stat-label">Needs Attention</span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Results Count ────────────────────────────────── */}
+            <div className="fs-results-bar">
+              <span className="fs-results-count">
+                {studentsPageList.length} student{studentsPageList.length !== 1 ? 's' : ''}
+                {(studentsSearch || studentsPerformanceFilter !== 'all' || studentsStatusFilter !== 'all') && (
+                  <> matching filters</>
+                )}
+              </span>
+              {(studentsSearch || studentsPerformanceFilter !== 'all' || studentsStatusFilter !== 'all') && (
+                <button
+                  className="fs-clear-filters"
+                  onClick={() => {
+                    setStudentsSearch('');
+                    setStudentsPerformanceFilter('all');
+                    setStudentsStatusFilter('all');
+                  }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            {/* ── Student List ─────────────────────────────────── */}
+            {isLoadingItems ? (
+              <div className="fs-loading">
+                <RefreshCw size={20} className="fs-spinner" />
+                <span>Loading student data…</span>
+              </div>
+            ) : studentsPageList.length === 0 ? (
+              <div className="fs-empty">
+                <Users size={32} style={{ opacity: 0.3 }} />
+                <h3>{studentsSearch || studentsPerformanceFilter !== 'all' || studentsStatusFilter !== 'all'
+                  ? 'No students match your filters'
+                  : 'No Student Activity Yet'
+                }</h3>
+                <p>{studentsSearch
+                  ? `No results for "${studentsSearch}"`
+                  : 'Students will appear here once they begin submitting practicals.'
+                }</p>
+              </div>
+            ) : (
+              <>
+                {/* Desktop Table */}
+                <div className="fs-table-wrap">
+                  <table className="fs-table">
                     <thead>
-                      <tr style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>PRN / Identifier</th>
-                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>Student Name</th>
-                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>Submissions</th>
-                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>Latest Evaluation</th>
-                        <th style={{ padding: '10px 16px', fontWeight: 600 }}>Status</th>
+                      <tr>
+                        <th>Student</th>
+                        <th>Progress</th>
+                        <th>Avg Score</th>
+                        <th>Recent Activity</th>
+                        <th>Status</th>
+                        <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredStudents.map((st) => (
-                        <tr key={st.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                          <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--primary)' }}>
-                            {st.prn}
+                      {studentsPageList.map((st) => (
+                        <tr key={st.id} className={st.learningStatus === 'needs-attention' ? 'fs-row-attention' : ''}>
+                          <td>
+                            <div className="fs-student-cell">
+                              <span className="fs-student-name">{st.name}</span>
+                              <span className="fs-student-prn">{st.prn}</span>
+                            </div>
                           </td>
-                          <td style={{ padding: '12px 16px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {st.name}
+                          <td>
+                            <div className="fs-progress-cell">
+                              <span className="fs-progress-count">
+                                {st.completedPracticals} of {practicalProgress.length || '—'}
+                              </span>
+                              <span className="fs-progress-label">practicals</span>
+                            </div>
                           </td>
-                          <td style={{ padding: '12px 16px' }}>
-                            <Badge variant="neutral" size="sm">
-                              {st.submissionsCount} Practical{st.submissionsCount === 1 ? '' : 's'}
-                            </Badge>
+                          <td>
+                            <div className="fs-score-cell">
+                              {st.avgScore != null ? (
+                                <>
+                                  <span className="fs-score-value">{st.avgScore.toFixed(1)}</span>
+                                  <span className="fs-score-unit">/ 10.0</span>
+                                </>
+                              ) : st.avgCoding != null ? (
+                                <>
+                                  <span className="fs-score-value">{st.avgCoding.toFixed(1)}</span>
+                                  <span className="fs-score-unit">/ 3.0</span>
+                                </>
+                              ) : (
+                                <span className="fs-score-na">—</span>
+                              )}
+                            </div>
                           </td>
-                          <td style={{ padding: '12px 16px', fontWeight: 600 }}>
-                            {st.latestScore}
+                          <td>
+                            <div className="fs-activity-cell">
+                              {st.latestPractical && <span className="fs-activity-practical">{st.latestPractical}</span>}
+                              <span className="fs-activity-time">{formatRelativeTime(st.latestActivity)}</span>
+                            </div>
                           </td>
-                          <td style={{ padding: '12px 16px' }}>
-                            <Badge variant={st.status === 'Graded' ? 'success' : 'warning'} size="sm">
-                              {st.status}
-                            </Badge>
+                          <td>
+                            <div className="fs-status-cell">
+                              <span className={`fs-status-badge fs-status-${st.learningStatus}`}>
+                                {st.learningStatus === 'on-track' && <><CheckCircle size={10} /> On Track</>}
+                                {st.learningStatus === 'improving' && <><TrendingUp size={10} /> Improving</>}
+                                {st.learningStatus === 'needs-attention' && <><AlertTriangle size={10} /> Attention</>}
+                                {st.learningStatus === 'inactive' && <><Clock size={10} /> Inactive</>}
+                              </span>
+                              {st.reasons.length > 0 && (
+                                <span className="fs-attention-hint" title={st.reasons.map((r) => r.text).join('; ')}>
+                                  {st.reasons[0].text}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <button
+                              className="fs-view-btn"
+                              onClick={() => onNavigate && onNavigate('submissions')}
+                              title={`View submissions for ${st.name}`}
+                            >
+                              <Eye size={12} />
+                              View Student
+                            </button>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                )}
-              </CardContent>
-            </Card>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="fs-cards-wrap">
+                  {studentsPageList.map((st) => (
+                    <div key={st.id} className={`fs-card ${st.learningStatus === 'needs-attention' ? 'fs-card-attention' : ''}`}>
+                      <div className="fs-card-top">
+                        <div className="fs-card-identity">
+                          <span className="fs-card-name">{st.name}</span>
+                          <span className="fs-card-prn">{st.prn}</span>
+                        </div>
+                        <span className={`fs-status-badge fs-status-${st.learningStatus}`}>
+                          {st.learningStatus === 'on-track' && <><CheckCircle size={10} /> On Track</>}
+                          {st.learningStatus === 'improving' && <><TrendingUp size={10} /> Improving</>}
+                          {st.learningStatus === 'needs-attention' && <><AlertTriangle size={10} /> Attention</>}
+                          {st.learningStatus === 'inactive' && <><Clock size={10} /> Inactive</>}
+                        </span>
+                      </div>
+
+                      <div className="fs-card-stats">
+                        <div className="fs-card-stat">
+                          <span className="fs-card-stat-label">Progress</span>
+                          <span className="fs-card-stat-value">{st.completedPracticals}/{practicalProgress.length || '—'}</span>
+                        </div>
+                        <div className="fs-card-stat">
+                          <span className="fs-card-stat-label">Avg Score</span>
+                          <span className="fs-card-stat-value">
+                            {st.avgScore != null ? `${st.avgScore.toFixed(1)}/10` : st.avgCoding != null ? `${st.avgCoding.toFixed(1)}/3` : '—'}
+                          </span>
+                        </div>
+                        <div className="fs-card-stat">
+                          <span className="fs-card-stat-label">Last Active</span>
+                          <span className="fs-card-stat-value">{formatRelativeTime(st.latestActivity)}</span>
+                        </div>
+                      </div>
+
+                      {st.reasons.length > 0 && (
+                        <div className="fs-card-reasons">
+                          {st.reasons.slice(0, 2).map((r, i) => (
+                            <span key={i} className={`fd-reason fd-reason-${r.type}`}>
+                              {r.type === 'integrity' && <ShieldAlert size={10} />}
+                              {r.type === 'performance' && <TrendingDown size={10} />}
+                              {r.type === 'activity' && <Clock size={10} />}
+                              {r.text}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <button
+                        className="fs-card-action"
+                        onClick={() => onNavigate && onNavigate('submissions')}
+                      >
+                        <Eye size={12} />
+                        View Student
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </section>
         )}
 
