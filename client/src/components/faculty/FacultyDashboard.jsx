@@ -33,6 +33,7 @@ import SubmissionsQueue from './SubmissionsQueue';
 import GradingModal from './GradingModal';
 import AuditLogDrawer from './AuditLogDrawer';
 import FacultyStudent360View from './FacultyStudent360View';
+import FacultySubmissionReviewView from './FacultySubmissionReviewView';
 import Button from '../ui/Button';
 import {
   getFacultySubjects,
@@ -112,12 +113,14 @@ export default function FacultyDashboard({
   const [studentsStatusFilter, setStudentsStatusFilter] = useState('all');
   const [studentsSort, setStudentsSort] = useState('name');
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [reviewingSubmission, setReviewingSubmission] = useState(null);
 
-  // Reset selected student when navigating away from students
+  // Reset selected student and reviewing submission when navigating away
   useEffect(() => {
     if (activeNav !== 'students') {
       setSelectedStudent(null);
     }
+    setReviewingSubmission(null);
   }, [activeNav]);
 
   const showNotification = useCallback((text) => {
@@ -259,10 +262,10 @@ export default function FacultyDashboard({
     return created;
   };
 
-  // Open Grading Modal
+  // Open Grading Modal / Full Review Workspace
   const handleOpenGrading = (sub) => {
     setSelectedSubmission(sub);
-    setIsGradingOpen(true);
+    setReviewingSubmission(sub);
   };
 
   // Save 10M Rubric Grade
@@ -806,7 +809,7 @@ export default function FacultyDashboard({
           </section>
         )}
 
-        {selectedSubject && selectedBatch && (
+        {selectedSubject && selectedBatch && !reviewingSubmission && (
           <section className="faculty-workflow-step">
             <FacultyActiveContext
               subject={selectedSubject}
@@ -819,11 +822,40 @@ export default function FacultyDashboard({
         )}
 
         {/* =========================================================
-            DASHBOARD VIEW — Academic Intelligence
+            FACULTY SUBMISSION REVIEW & GRADING WORKSPACE
             ========================================================= */}
-        {hasContext && isDashboard && (
-          <>
-            {/* ── Overview Metrics ────────────────────────────────── */}
+        {hasContext && (
+          reviewingSubmission ? (
+            <FacultySubmissionReviewView
+              submission={reviewingSubmission}
+              student={selectedStudent}
+              practicals={subjectPracticals.length > 0 ? subjectPracticals : assignments.map((a) => a.practical).filter(Boolean)}
+              allSubmissions={submissions}
+              currentUser={currentUser}
+              onSaveGrade={async (subId, gradeData) => {
+                await handleSaveGradeInternal(subId, gradeData);
+                const c = Math.min(3.0, Math.max(0.0, parseFloat(gradeData.codingMarks || 0)));
+                const w = Math.min(5.0, Math.max(0.0, parseFloat(gradeData.writeupMarks || 0)));
+                const v = Math.min(2.0, Math.max(0.0, parseFloat(gradeData.vivaMarks || 0)));
+                const total = Math.min(10.0, Math.round((c + w + v) * 10) / 10);
+                setReviewingSubmission((prev) => ({
+                  ...prev,
+                  ...gradeData,
+                  totalMarks: total,
+                  status: 'Graded',
+                }));
+              }}
+              onBack={() => setReviewingSubmission(null)}
+              onSelectSubmission={(nextSub) => setReviewingSubmission(nextSub)}
+            />
+          ) : (
+            <>
+              {/* =========================================================
+                  DASHBOARD VIEW — Academic Intelligence
+                  ========================================================= */}
+              {isDashboard && (
+                <>
+                  {/* ── Overview Metrics ────────────────────────────────── */}
             <section className="fd-overview-section">
               <div className="faculty-metrics-banner" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
                 {/* Active Students */}
@@ -1688,6 +1720,9 @@ export default function FacultyDashboard({
               </div>
             </Card>
           </section>
+        )}
+            </>
+          )
         )}
 
         {/* =========================================================
