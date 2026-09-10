@@ -25,7 +25,7 @@ export default function StudentVisualizationsView({
     <div className="student-visualizations-view" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       <PageHeader
         title="Algorithmic Visualizations"
-        subtitle="Interactive 3D spatial representations of tree and graph invariants for curricular algorithms"
+        subtitle="Interactive 3D spatial representations of data structures and algorithmic state invariants for curricular experiments"
         badge={
           <Badge variant="primary" size="sm" icon={Sparkles}>
             Interactive Canvas
@@ -123,10 +123,12 @@ export default function StudentVisualizationsView({
           <Info size={16} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
           <div>
             <strong style={{ fontSize: '13px', color: 'var(--text-primary)', display: 'block' }}>
-              Spatial Pedagogical Representation
+              Spatial Pedagogical Representation: {activePractical?.title || 'Data Structure Topology'}
             </strong>
             <span style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              The 3D state visualizer projects memory pointer relations and weighted path graphs into 3-space coordinates. Use this visualization to trace invariant bounds before stepping through test suites in the Code Lab.
+              {activePractical?.aim
+                ? `Algorithmic procedure: ${activePractical.aim}. Use this 3D visualization to observe spatial state transitions and verify invariants before running automated test cases in Code Lab.`
+                : 'The 3D state visualizer projects memory structures and relational invariants into 3-space coordinates. Use this visualization to trace invariant bounds before stepping through test suites in the Code Lab.'}
             </span>
           </div>
         </div>

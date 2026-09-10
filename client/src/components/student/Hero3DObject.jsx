@@ -52,13 +52,15 @@ export default function Hero3DObject({
     edges: [],
   });
 
-  // Generate 3D nodes and edges based on the practical type
+  // Generate 3D nodes and edges dynamically based on practical title, category, and algorithm
   useEffect(() => {
-    const pracId = practical?.id || 'prac_dsa_04_bst';
+    const title = (practical?.title || '').toLowerCase();
+    const cat = (practical?.category || '').toLowerCase();
+    const pracId = (practical?.id || '').toLowerCase();
 
-    if (pracId.includes('dijkstra')) {
+    if (title.includes('dijkstra') || title.includes('shortest path') || pracId.includes('dijkstra')) {
       // 3D Graph Structure
-      const graphNodes = [
+      stateRef.current.nodes = [
         { id: 0, label: 'S (0)', x: -100, y: 0, z: 0, active: true },
         { id: 1, label: 'A (4)', x: -40, y: -70, z: -40 },
         { id: 2, label: 'B (2)', x: -30, y: 60, z: 50 },
@@ -66,7 +68,7 @@ export default function Hero3DObject({
         { id: 4, label: 'D (5)', x: 50, y: 70, z: -30 },
         { id: 5, label: 'T (6)', x: 110, y: 10, z: 10 },
       ];
-      const graphEdges = [
+      stateRef.current.edges = [
         { from: 0, to: 1, weight: '4' },
         { from: 0, to: 2, weight: '2' },
         { from: 1, to: 2, weight: '1' },
@@ -76,11 +78,9 @@ export default function Hero3DObject({
         { from: 3, to: 5, weight: '2' },
         { from: 4, to: 5, weight: '3' },
       ];
-      stateRef.current.nodes = graphNodes;
-      stateRef.current.edges = graphEdges;
-    } else if (pracId.includes('avl')) {
+    } else if (title.includes('avl') || title.includes('balanced tree') || pracId.includes('avl')) {
       // 3D AVL Balanced Tree
-      const avlNodes = [
+      stateRef.current.nodes = [
         { id: 0, label: '30 [0]', x: 0, y: -90, z: 0 },
         { id: 1, label: '20 [0]', x: -75, y: -20, z: -25 },
         { id: 2, label: '40 [0]', x: 75, y: -20, z: 25 },
@@ -89,7 +89,7 @@ export default function Hero3DObject({
         { id: 5, label: '35 [0]', x: 35, y: 55, z: 5 },
         { id: 6, label: '50 [0]', x: 115, y: 55, z: 45 },
       ];
-      const avlEdges = [
+      stateRef.current.edges = [
         { from: 0, to: 1 },
         { from: 0, to: 2 },
         { from: 1, to: 3 },
@@ -97,31 +97,99 @@ export default function Hero3DObject({
         { from: 2, to: 5 },
         { from: 2, to: 6 },
       ];
-      stateRef.current.nodes = avlNodes;
-      stateRef.current.edges = avlEdges;
-    } else if (pracId.includes('scheduling')) {
-      // 3D Round Robin Circular Queue Ring
-      const queueNodes = [];
-      const numProcesses = 6;
-      for (let i = 0; i < numProcesses; i++) {
-        const theta = (i / numProcesses) * Math.PI * 2;
-        queueNodes.push({
-          id: i,
-          label: `P${i + 1} (q=2)`,
-          x: Math.cos(theta) * 90,
-          y: Math.sin(theta) * 35,
-          z: Math.sin(theta) * 90,
-        });
-      }
-      const queueEdges = [];
-      for (let i = 0; i < numProcesses; i++) {
-        queueEdges.push({ from: i, to: (i + 1) % numProcesses });
-      }
-      stateRef.current.nodes = queueNodes;
-      stateRef.current.edges = queueEdges;
+    } else if (title.includes('stack') || cat.includes('stack')) {
+      // 3D Vertical Stack Tower (LIFO Ordering)
+      stateRef.current.nodes = [
+        { id: 0, label: '10 [Base]', x: 0, y: 70, z: 0, order: 0 },
+        { id: 1, label: '20', x: 0, y: 35, z: 5, order: 1 },
+        { id: 2, label: '30', x: 0, y: 0, z: 10, order: 2 },
+        { id: 3, label: '40 [Top]', x: 0, y: -35, z: 15, order: 3 },
+        { id: 4, label: '50 [Push]', x: 0, y: -75, z: 20, order: 4 },
+      ];
+      stateRef.current.edges = [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+        { from: 3, to: 4 },
+      ];
+    } else if (title.includes('queue') || cat.includes('queue') || pracId.includes('scheduling')) {
+      // 3D Horizontal Queue Pipeline (FIFO Ordering)
+      stateRef.current.nodes = [
+        { id: 0, label: '10 [Front]', x: -100, y: 0, z: -20, order: 0 },
+        { id: 1, label: '20', x: -50, y: 0, z: -10, order: 1 },
+        { id: 2, label: '30', x: 0, y: 0, z: 0, order: 2 },
+        { id: 3, label: '40', x: 50, y: 0, z: 10, order: 3 },
+        { id: 4, label: '50 [Rear]', x: 100, y: 0, z: 20, order: 4 },
+      ];
+      stateRef.current.edges = [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+        { from: 3, to: 4 },
+      ];
+    } else if (title.includes('search')) {
+      // 3D Linear & Binary Search Indexed Array
+      stateRef.current.nodes = [
+        { id: 0, label: '[0]: 10', x: -120, y: 0, z: -30, order: 0 },
+        { id: 1, label: '[1]: 20', x: -60, y: 0, z: -15, order: 1 },
+        { id: 2, label: '[2]: 30 (Mid)', x: 0, y: 0, z: 0, order: 2 },
+        { id: 3, label: '[3]: 40 (Key)', x: 60, y: 0, z: 15, order: 3 },
+        { id: 4, label: '[4]: 50', x: 120, y: 0, z: 30, order: 4 },
+      ];
+      stateRef.current.edges = [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+        { from: 3, to: 4 },
+      ];
+    } else if (title.includes('sort')) {
+      // 3D Sorting Array with Comparative Pair Elements
+      stateRef.current.nodes = [
+        { id: 0, label: '64', x: -120, y: -25, z: -20, order: 0 },
+        { id: 1, label: '25', x: -60, y: 15, z: -10, order: 1 },
+        { id: 2, label: '12 [Min]', x: 0, y: 35, z: 0, order: 2 },
+        { id: 3, label: '22', x: 60, y: 20, z: 10, order: 3 },
+        { id: 4, label: '11', x: 120, y: 40, z: 20, order: 4 },
+      ];
+      stateRef.current.edges = [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+        { from: 3, to: 4 },
+      ];
+    } else if (title.includes('largest') || (title.includes('array') && !title.includes('tree'))) {
+      // 3D Array Maximum Invariant Scan
+      stateRef.current.nodes = [
+        { id: 0, label: '[0]: 10', x: -100, y: 10, z: -20, order: 0 },
+        { id: 1, label: '[1]: 20', x: -50, y: -10, z: -10, order: 1 },
+        { id: 2, label: '[2]: 5', x: 0, y: 25, z: 0, order: 2 },
+        { id: 3, label: '[3]: 15', x: 50, y: 5, z: 10, order: 3 },
+        { id: 4, label: '[4]: 76 [Max]', x: 100, y: -45, z: 20, order: 4 },
+      ];
+      stateRef.current.edges = [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+        { from: 3, to: 4 },
+      ];
+    } else if (title.includes('python') || title.includes('recursion') || title.includes('function') || title.includes('operator')) {
+      // 3D Execution Frame / Call Stack
+      stateRef.current.nodes = [
+        { id: 0, label: 'main()', x: 0, y: 70, z: 0, order: 0 },
+        { id: 1, label: 'call(n)', x: 0, y: 35, z: 10, order: 1 },
+        { id: 2, label: 'eval(cond)', x: 0, y: 0, z: 20, order: 2 },
+        { id: 3, label: 'exec(op)', x: 0, y: -35, z: 30, order: 3 },
+        { id: 4, label: 'return', x: 0, y: -70, z: 40, order: 4 },
+      ];
+      stateRef.current.edges = [
+        { from: 0, to: 1 },
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+        { from: 3, to: 4 },
+      ];
     } else {
-      // Default: 3D Binary Search Tree (Practical 04: BST)
-      const bstNodes = [
+      // Default: 3D Binary Search Tree (Trees / Hierarchical Practicals)
+      stateRef.current.nodes = [
         { id: 0, label: '50 (Root)', x: 0, y: -90, z: 0, order: 3 },
         { id: 1, label: '25', x: -80, y: -15, z: -30, order: 1 },
         { id: 2, label: '75', x: 80, y: -15, z: 30, order: 5 },
@@ -130,7 +198,7 @@ export default function Hero3DObject({
         { id: 5, label: '60', x: 35, y: 65, z: 10, order: 4 },
         { id: 6, label: '90', x: 125, y: 65, z: 50, order: 6 },
       ];
-      const bstEdges = [
+      stateRef.current.edges = [
         { from: 0, to: 1 },
         { from: 0, to: 2 },
         { from: 1, to: 3 },
@@ -138,8 +206,6 @@ export default function Hero3DObject({
         { from: 2, to: 5 },
         { from: 2, to: 6 },
       ];
-      stateRef.current.nodes = bstNodes;
-      stateRef.current.edges = bstEdges;
     }
   }, [practical]);
 
@@ -444,7 +510,7 @@ export default function Hero3DObject({
 
           <div className="hero-3d-traversal-step">
             <span className="step-label">Live Traversal:</span>
-            <span className="step-val">Step {activeStep + 1} of 7 (Inorder)</span>
+            <span className="step-val">Step {activeStep + 1} of {stateRef.current?.nodes?.length || 5}</span>
           </div>
 
           <div className="hero-3d-controls">

@@ -209,6 +209,120 @@ public class Main {
 };
 
 /**
+ * Normalizes a raw Supabase practical record into a structured object
+ * exposing all required learning properties consistently in both camelCase and snake_case.
+ * Single canonical source of truth for practical details.
+ */
+export function normalizePractical(p, extraContext = {}) {
+  if (!p) return null;
+  const theory = p.theory_content || p.theoryContent || {};
+  const dbCodes = p.starter_codes || p.starterCodes || {};
+  const canonicalFallback = CANONICAL_STARTER_CODES[p.practical_number] || {};
+
+  const isValidCode = (val) => typeof val === 'string' && val.trim().length > 0 && val.trim() !== '...';
+
+  const resolvedStarterCodes = {
+    cpp: isValidCode(dbCodes.cpp) ? dbCodes.cpp : (canonicalFallback.cpp || dbCodes.cpp || ''),
+    python: isValidCode(dbCodes.python) ? dbCodes.python : (canonicalFallback.python || dbCodes.python || ''),
+    java: isValidCode(dbCodes.java) ? dbCodes.java : (canonicalFallback.java || dbCodes.java || ''),
+    c: isValidCode(dbCodes.c) ? dbCodes.c : (isValidCode(dbCodes.cpp) ? dbCodes.cpp : (canonicalFallback.cpp || dbCodes.c || '')),
+    javascript: isValidCode(dbCodes.javascript) ? dbCodes.javascript : (dbCodes.javascript || ''),
+  };
+
+  const rawTestCases = p.test_cases || p.testCases || [];
+  const sortedTestCases = [...rawTestCases].sort((a, b) => (b.is_sample ? 1 : 0) - (a.is_sample ? 1 : 0));
+  const normalizedTestCases = sortedTestCases.map((tc, idx) => ({
+    id: tc.id || `tc_${idx + 1}`,
+    input_data: tc.input_data ?? '',
+    input: tc.input_data ?? '',
+    expected_output: tc.expected_output ?? '',
+    output: tc.expected_output ?? '',
+    is_sample: Boolean(tc.is_sample),
+    is_parameterized: Boolean(tc.is_parameterized),
+  }));
+
+  const subjectInfo = p.subjects || extraContext.subject || {};
+  const courseCode = extraContext.courseCode || (
+    subjectInfo.code && subjectInfo.name
+      ? `${subjectInfo.code}: ${subjectInfo.name}`
+      : subjectInfo.code || 'CS201P: Data Structures'
+  );
+
+  const rawAlgo = theory.algorithm !== undefined ? theory.algorithm : (p.algorithm || null);
+  const rawPseudo = theory.pseudocode !== undefined ? theory.pseudocode : (p.pseudocode || '');
+  const flowchartUrl = p.flowchart_url || p.flowchartUrl || theory.flowchart_url || theory.flowchartUrl || null;
+  const videoUrl = p.video_url || p.videoUrl || theory.video_url || theory.videoUrl || null;
+
+  return {
+    id: p.id,
+    practicalNumber: p.practical_number ?? p.practicalNumber,
+    practical_number: p.practical_number ?? p.practicalNumber,
+    title: (p.title || '').startsWith('Practical')
+      ? p.title
+      : `Practical ${String(p.practical_number ?? p.practicalNumber ?? 1).padStart(2, '0')}: ${p.title || 'Laboratory Practical'}`,
+    courseCode,
+    subjectId: p.subject_id ?? extraContext.subjectId ?? subjectInfo.id,
+    subject_id: p.subject_id ?? extraContext.subjectId ?? subjectInfo.id,
+    subjectCode: subjectInfo.code || extraContext.subjectCode || '',
+    subjectName: subjectInfo.name || extraContext.subjectName || '',
+    aim: p.aim || '',
+    category: theory.category || extraContext.category || 'Algorithms & Data Structures',
+    nepLevel: theory.nepLevel || 'Level 5 (Curricular Practical)',
+    avgTime: theory.avgTime || (theory.estimated_time_minutes ? `${theory.estimated_time_minutes} Mins` : '30 Mins'),
+    estimated_time_minutes: theory.estimated_time_minutes || null,
+    estimatedTime: theory.estimated_time_minutes ? `${theory.estimated_time_minutes} Mins` : (theory.avgTime || '30 Mins'),
+    difficulty: theory.difficulty || (p.practical_number <= 3 ? 'Easy' : p.practical_number <= 6 ? 'Medium' : 'Hard'),
+
+    // Core Learning Fields directly from Supabase
+    theoryContent: theory,
+    theory_content: theory,
+    theory: theory.theory || theory.explanation || theory.concept || p.aim || '',
+    explanation: theory.explanation || theory.theory || '',
+    concept: theory.concept || theory.theory || '',
+    concepts: theory.concepts || null,
+    examples: Array.isArray(theory.examples) ? theory.examples : null,
+    problems: Array.isArray(theory.problems) ? theory.problems : null,
+    operators: theory.operators || null,
+    comparison: theory.comparison || null,
+    complexity: theory.complexity || null,
+    coMapping: theory.co_mapping || '',
+    co_mapping: theory.co_mapping || '',
+    importantNote: theory.important_note || '',
+    important_note: theory.important_note || '',
+    objectives: Array.isArray(theory.objectives)
+      ? theory.objectives
+      : (Array.isArray(theory.learning_points) ? theory.learning_points : null),
+    learningPoints: Array.isArray(theory.learning_points)
+      ? theory.learning_points
+      : (Array.isArray(theory.key_points) ? theory.key_points : null),
+    learning_points: Array.isArray(theory.learning_points)
+      ? theory.learning_points
+      : (Array.isArray(theory.key_points) ? theory.key_points : null),
+    prerequisites: Array.isArray(theory.prerequisites) ? theory.prerequisites : null,
+
+    // Real Algorithm, Pseudocode, Flowchart, Video, Starters, Tests
+    algorithm: rawAlgo,
+    pseudocode: rawPseudo,
+    flowchartUrl,
+    flowchart_url: flowchartUrl,
+    videoUrl,
+    video_url: videoUrl,
+    starterCodes: resolvedStarterCodes,
+    starter_codes: resolvedStarterCodes,
+    testCases: normalizedTestCases,
+    test_cases: normalizedTestCases,
+
+    // Rubric Marks
+    maxCodingMarks: parseFloat(p.max_coding_marks ?? p.maxCodingMarks ?? 3.0),
+    maxWriteupMarks: parseFloat(p.max_writeup_marks ?? p.maxWriteupMarks ?? 5.0),
+    maxVivaMarks: parseFloat(p.max_viva_marks ?? p.maxVivaMarks ?? 2.0),
+    max_coding_marks: parseFloat(p.max_coding_marks ?? p.maxCodingMarks ?? 3.0),
+    max_writeup_marks: parseFloat(p.max_writeup_marks ?? p.maxWriteupMarks ?? 5.0),
+    max_viva_marks: parseFloat(p.max_viva_marks ?? p.maxVivaMarks ?? 2.0),
+  };
+}
+
+/**
  * Fetch subjects for the student backed by real database records.
  * Queries public.subjects joined with linked practical counts.
  * Filters out subjects that do not have active practical records.
@@ -390,47 +504,14 @@ export async function getStudentAssignments(userId, subjectId) {
         }
       }
 
-      // Format canonical starter codes & practical details
-      const theory = p.theory_content || {};
-      const testCases = (p.test_cases || []).sort((x, y) => (y.is_sample ? 1 : 0) - (x.is_sample ? 1 : 0));
-      const dbCodes = p.starter_codes || {};
-      const canonicalFallback = CANONICAL_STARTER_CODES[p.practical_number] || {};
-      const resolvedStarterCodes = {
-        cpp: dbCodes.cpp && dbCodes.cpp !== '...' ? dbCodes.cpp : (canonicalFallback.cpp || dbCodes.cpp || ''),
-        python: dbCodes.python && dbCodes.python !== '...' ? dbCodes.python : (canonicalFallback.python || dbCodes.python || ''),
-        java: dbCodes.java && dbCodes.java !== '...' ? dbCodes.java : (canonicalFallback.java || dbCodes.java || ''),
-        c: dbCodes.c && dbCodes.c !== '...' ? dbCodes.c : (canonicalFallback.cpp || dbCodes.c || ''),
-      };
-
-      const normalizedPractical = {
-        id: p.id,
-        practicalNumber: p.practical_number,
-        title: p.title.startsWith('Practical') ? p.title : `Practical ${String(p.practical_number).padStart(2, '0')}: ${p.title}`,
+      // Format canonical starter codes & practical details via unified normalizePractical
+      const normalizedPractical = normalizePractical(p, {
         courseCode: `${a.subjects?.code || 'LAB'}: ${a.subjects?.name || 'Lab Course'}`,
+        subject: a.subjects,
         subjectId: a.subject_id,
-        subjectCode: a.subjects?.code || '',
-        subjectName: a.subjects?.name || '',
-        aim: p.aim,
-        category: theory.category || 'Algorithms & Data Structures',
-        nepLevel: theory.nepLevel || 'Level 5 (Curricular Practical)',
-        avgTime: theory.avgTime || '30 Mins',
-        difficulty: theory.difficulty || (p.practical_number <= 3 ? 'Easy' : p.practical_number <= 6 ? 'Medium' : 'Hard'),
-        algorithm: Array.isArray(theory.algorithm) ? theory.algorithm : [],
-        pseudocode: theory.pseudocode || '',
-        flowchartUrl: p.flowchart_url,
-        videoUrl: p.video_url,
-        starterCodes: resolvedStarterCodes,
-        testCases: testCases.map((tc) => ({
-          id: tc.id,
-          input_data: tc.input_data,
-          expected_output: tc.expected_output,
-          is_sample: tc.is_sample,
-          is_parameterized: tc.is_parameterized,
-        })),
-        maxCodingMarks: parseFloat(p.max_coding_marks || 3.0),
-        maxWriteupMarks: parseFloat(p.max_writeup_marks || 5.0),
-        maxVivaMarks: parseFloat(p.max_viva_marks || 2.0),
-      };
+        subjectCode: a.subjects?.code,
+        subjectName: a.subjects?.name,
+      });
 
       return {
         assignmentId: a.id,
@@ -492,54 +573,7 @@ export async function getPracticalsBySubject(subjectId) {
     return [];
   }
 
-  return data.map((p) => {
-    const theory = p.theory_content || {};
-    const testCases = (p.test_cases || []).sort((a, b) => (b.is_sample ? 1 : 0) - (a.is_sample ? 1 : 0));
-    const subjectInfo = p.subjects || {};
-    const courseCode = subjectInfo.code && subjectInfo.name
-      ? `${subjectInfo.code}: ${subjectInfo.name}`
-      : subjectInfo.code || 'CS201P: Data Structures';
-
-    // Resolve canonical starter code if database contains placeholder '...'
-    const dbCodes = p.starter_codes || {};
-    const canonicalFallback = CANONICAL_STARTER_CODES[p.practical_number] || {};
-    const resolvedStarterCodes = {
-      cpp: dbCodes.cpp && dbCodes.cpp !== '...' ? dbCodes.cpp : (canonicalFallback.cpp || dbCodes.cpp || ''),
-      python: dbCodes.python && dbCodes.python !== '...' ? dbCodes.python : (canonicalFallback.python || dbCodes.python || ''),
-      java: dbCodes.java && dbCodes.java !== '...' ? dbCodes.java : (canonicalFallback.java || dbCodes.java || ''),
-      c: dbCodes.c && dbCodes.c !== '...' ? dbCodes.c : (canonicalFallback.cpp || dbCodes.c || ''),
-    };
-
-    return {
-      id: p.id,
-      practicalNumber: p.practical_number,
-      title: p.title.startsWith('Practical') ? p.title : `Practical ${String(p.practical_number).padStart(2, '0')}: ${p.title}`,
-      courseCode,
-      subjectId: p.subject_id,
-      subjectCode: subjectInfo.code || '',
-      subjectName: subjectInfo.name || '',
-      aim: p.aim,
-      category: theory.category || 'Algorithms & Data Structures',
-      nepLevel: theory.nepLevel || 'Level 5 (Curricular Practical)',
-      avgTime: theory.avgTime || '30 Mins',
-      difficulty: theory.difficulty || (p.practical_number <= 3 ? 'Easy' : p.practical_number <= 6 ? 'Medium' : 'Hard'),
-      algorithm: Array.isArray(theory.algorithm) ? theory.algorithm : [],
-      pseudocode: theory.pseudocode || '',
-      flowchartUrl: p.flowchart_url,
-      videoUrl: p.video_url,
-      starterCodes: resolvedStarterCodes,
-      testCases: testCases.map((tc) => ({
-        id: tc.id,
-        input_data: tc.input_data,
-        expected_output: tc.expected_output,
-        is_sample: tc.is_sample,
-        is_parameterized: tc.is_parameterized,
-      })),
-      maxCodingMarks: parseFloat(p.max_coding_marks || 3.0),
-      maxWriteupMarks: parseFloat(p.max_writeup_marks || 5.0),
-      maxVivaMarks: parseFloat(p.max_viva_marks || 2.0),
-    };
-  });
+  return data.map((p) => normalizePractical(p, { subject: p.subjects }));
 }
 
 /**
@@ -577,54 +611,7 @@ export async function getPracticals() {
     return [];
   }
 
-  return data.map((p) => {
-    const theory = p.theory_content || {};
-    const testCases = (p.test_cases || []).sort((a, b) => (b.is_sample ? 1 : 0) - (a.is_sample ? 1 : 0));
-    const subjectInfo = p.subjects || {};
-    const courseCode = subjectInfo.code && subjectInfo.name
-      ? `${subjectInfo.code}: ${subjectInfo.name}`
-      : subjectInfo.code || 'CS201P: Data Structures';
-
-    // Resolve canonical starter code if database contains placeholder '...'
-    const dbCodes = p.starter_codes || {};
-    const canonicalFallback = CANONICAL_STARTER_CODES[p.practical_number] || {};
-    const resolvedStarterCodes = {
-      cpp: dbCodes.cpp && dbCodes.cpp !== '...' ? dbCodes.cpp : (canonicalFallback.cpp || dbCodes.cpp || ''),
-      python: dbCodes.python && dbCodes.python !== '...' ? dbCodes.python : (canonicalFallback.python || dbCodes.python || ''),
-      java: dbCodes.java && dbCodes.java !== '...' ? dbCodes.java : (canonicalFallback.java || dbCodes.java || ''),
-      c: dbCodes.c && dbCodes.c !== '...' ? dbCodes.c : (canonicalFallback.cpp || dbCodes.c || ''),
-    };
-
-    return {
-      id: p.id,
-      practicalNumber: p.practical_number,
-      title: p.title.startsWith('Practical') ? p.title : `Practical ${String(p.practical_number).padStart(2, '0')}: ${p.title}`,
-      courseCode,
-      subjectId: p.subject_id,
-      subjectCode: subjectInfo.code || '',
-      subjectName: subjectInfo.name || '',
-      aim: p.aim,
-      category: theory.category || 'Algorithms & Data Structures',
-      nepLevel: theory.nepLevel || 'Level 5 (Trees & Invariants)',
-      avgTime: theory.avgTime || '30 Mins',
-      difficulty: theory.difficulty || (p.practical_number <= 3 ? 'Easy' : p.practical_number <= 6 ? 'Medium' : 'Hard'),
-      algorithm: Array.isArray(theory.algorithm) ? theory.algorithm : [],
-      pseudocode: theory.pseudocode || '',
-      flowchartUrl: p.flowchart_url,
-      videoUrl: p.video_url,
-      starterCodes: resolvedStarterCodes,
-      testCases: testCases.map((tc) => ({
-        id: tc.id,
-        input_data: tc.input_data,
-        expected_output: tc.expected_output,
-        is_sample: tc.is_sample,
-        is_parameterized: tc.is_parameterized,
-      })),
-      maxCodingMarks: parseFloat(p.max_coding_marks || 3.0),
-      maxWriteupMarks: parseFloat(p.max_writeup_marks || 5.0),
-      maxVivaMarks: parseFloat(p.max_viva_marks || 2.0),
-    };
-  });
+  return data.map((p) => normalizePractical(p, { subject: p.subjects }));
 }
 
 /**

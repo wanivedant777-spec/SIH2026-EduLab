@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Play,
   Send,
@@ -89,22 +89,54 @@ export default function StudentWorkspace({
   }, [liveLogs, terminalOpen]);
 
   // Derive test cases list from live evaluation result or practical testCases
-  const rawTestCases = evaluationResult?.test_case_results || (practical?.testCases || []).map((tc, idx) => ({
+  const rawTestCases = evaluationResult?.test_case_results || (practical?.testCases || practical?.test_cases || []).map((tc, idx) => ({
     test_case_index: idx + 1,
-    is_sample: tc.is_sample ?? (idx === 0),
-    is_parameterized: tc.is_parameterized || (!tc.is_sample && idx > 0),
+    is_sample: tc.is_sample ?? (idx < 2),
+    is_parameterized: tc.is_parameterized || (!tc.is_sample && idx >= 2),
     passed: null,
     status: 'Not Run',
-    input: tc.input_data || '',
-    expected_output: tc.expected_output || '',
+    input: tc.input_data || tc.input || '',
+    expected_output: tc.expected_output || tc.output || '',
     stdout: '',
     execution_time_sec: null,
     memory_kb: null,
   }));
 
   // Separate sample tests from hidden parameterized tests
-  const sampleTests = rawTestCases.filter((tc) => tc.is_sample || tc.test_case_index === 1);
-  const hiddenTests = rawTestCases.filter((tc) => !tc.is_sample && tc.test_case_index !== 1);
+  const sampleTests = rawTestCases.filter((tc) => Boolean(tc.is_sample));
+  const hiddenTests = rawTestCases.filter((tc) => !tc.is_sample);
+
+  // Normalize algorithm procedural steps for Problem Specification
+  const workspaceAlgoSteps = useMemo(() => {
+    const raw = practical?.algorithm || practical?.theory_content?.algorithm || practical?.theoryContent?.algorithm;
+    if (!raw) {
+      return [
+        { title: 'Initialize Setup', detail: 'Prepare standard input variables and data structures.' },
+        { title: 'Algorithmic Execution', detail: 'Implement operations satisfying curriculum invariants.' },
+        { title: 'Output Formatting', detail: 'Stream standard output strictly matching test cases.' },
+      ];
+    }
+    if (Array.isArray(raw)) {
+      return raw.map((item, idx) => {
+        if (typeof item === 'string') {
+          return { title: item, detail: '' };
+        }
+        return { title: item.title || `Step ${idx + 1}`, detail: item.detail || '' };
+      });
+    }
+    if (typeof raw === 'object') {
+      const keys = Object.keys(raw);
+      const firstKey = keys[0];
+      const steps = Array.isArray(raw[firstKey]) ? raw[firstKey] : [];
+      return steps.map((item, idx) => {
+        if (typeof item === 'string') {
+          return { title: item, detail: '' };
+        }
+        return { title: item.title || `Step ${idx + 1}`, detail: item.detail || '' };
+      });
+    }
+    return [];
+  }, [practical]);
 
   const toggleTestCaseExpand = (index) => {
     setExpandedTestCases((prev) => ({
@@ -402,13 +434,10 @@ export default function StudentWorkspace({
                 <span>Requirements &amp; Functions</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {(practical?.algorithm || [
-                  { title: 'Data Structure Setup', detail: 'Initialize node pointer structures and memory bounds.' },
-                  { title: 'Core Operation', detail: 'Implement insertion, search, or traversal methods maintaining invariants.' },
-                  { title: 'Output Serialization', detail: 'Stream standard output strictly matching test case tokens.' },
-                ]).map((step, idx) => (
+                {workspaceAlgoSteps.map((step, idx) => (
                   <div key={idx} style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    <strong style={{ color: 'var(--text-primary)' }}>{idx + 1}. {step.title}:</strong> {step.detail}
+                    <strong style={{ color: 'var(--text-primary)' }}>{idx + 1}. {step.title}</strong>
+                    {step.detail ? `: ${step.detail}` : ''}
                   </div>
                 ))}
               </div>
@@ -460,12 +489,18 @@ export default function StudentWorkspace({
             <div className="codelab-spec-card">
               <div className="codelab-spec-title">
                 <Award size={12} color="var(--primary)" />
-                <span>AICTE Learning Outcomes</span>
+                <span>Curricular Outcomes</span>
               </div>
               <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                <div><strong>LO-1:</strong> Construct memory-safe dynamic data structures.</div>
-                <div style={{ marginTop: '4px' }}><strong>LO-2:</strong> Analyze recursion depth and stack invariants.</div>
-                <div style={{ marginTop: '4px' }}><strong>LO-3:</strong> Validate correctness through deterministic unit suites.</div>
+                {(practical?.learningPoints || practical?.objectives || [
+                  'Construct memory-safe algorithmic operations.',
+                  'Validate correctness through deterministic test cases.',
+                  'Satisfy time and space complexity targets.',
+                ]).map((lo, i) => (
+                  <div key={i} style={{ marginTop: i > 0 ? '4px' : '0' }}>
+                    <strong>CO-{i + 1}:</strong> {lo}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -865,8 +900,8 @@ export default function StudentWorkspace({
                     <span>State Invariant Tracker</span>
                   </div>
                   <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    <div><strong>Structure:</strong> {practical?.category || 'Tree / Graph Topology'}</div>
-                    <div style={{ marginTop: '3px' }}><strong>Invariant:</strong> BST ordering ∀ x ∈ Left, val(x) &lt; root</div>
+                    <div><strong>Structure:</strong> {practical?.category || practical?.title || 'Data Structure Topology'}</div>
+                    <div style={{ marginTop: '3px' }}><strong>Invariant Target:</strong> {practical?.aim || 'Maintain procedural correctness and time bounds'}</div>
                     <div style={{ marginTop: '3px' }}><strong>Hardware:</strong> 60 FPS Canvas WebGL Accelerated</div>
                   </div>
                 </div>
@@ -889,10 +924,10 @@ export default function StudentWorkspace({
                     <span>Edge Case Checklist</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    <div>☐ <strong>Empty Tree / Null Root:</strong> Handle zero-node input gracefully without segfaulting.</div>
-                    <div>☐ <strong>Single Element:</strong> Ensure search on a 1-node structure terminates correctly.</div>
-                    <div>☐ <strong>Duplicate Keys:</strong> Insert duplicates to the right subtree or disallow based on spec.</div>
-                    <div>☐ <strong>Formatted Spacing:</strong> Ensure trailing whitespace matches expected output tokens.</div>
+                    <div>☐ <strong>Standard Input:</strong> Parse all whitespace/newline separated tokens correctly from stdin.</div>
+                    <div>☐ <strong>Boundary Cases:</strong> Verify termination on minimum/maximum bounds and edge inputs.</div>
+                    <div>☐ <strong>Formatted Tokens:</strong> Ensure stdout formatting matches expected output tokens.</div>
+                    <div>☐ <strong>Time &amp; Space Bounds:</strong> Verify no infinite loops or uncontrolled memory growth.</div>
                   </div>
                 </div>
 
@@ -902,16 +937,19 @@ export default function StudentWorkspace({
                     <HelpCircle size={12} color="var(--warning)" />
                     <span>Theoretical Invariants</span>
                   </div>
-                  {(practical?.vivaPrompts || [
+                  {(practical?.vivaPrompts || (practical?.learningPoints ? practical.learningPoints.map((lp, idx) => ({
+                    q: `Core Outcome #${idx + 1}`,
+                    a: lp,
+                  })) : [
                     {
-                      q: 'Height Invariant',
-                      a: 'In an unskewed BST, search latency scales as O(log N). Worst-case skewed trees degenerate to O(N).',
+                      q: 'Curricular Objective',
+                      a: practical?.aim || 'Execute algorithmic procedure with deterministic time and space bounds.',
                     },
                     {
-                      q: 'Memory Invariant',
-                      a: 'Avoid memory leaks by freeing allocated subtrees when deconstructing the tree.',
+                      q: 'Test Suite Verification',
+                      a: 'All solutions are validated against sample public tests and randomized boundary suites.',
                     },
-                  ]).map((item, idx) => (
+                  ])).map((item, idx) => (
                     <div key={idx} style={{ fontSize: '12px', marginTop: idx > 0 ? '8px' : '0' }}>
                       <strong style={{ color: 'var(--text-primary)' }}>Q: {item.q}</strong>
                       <p style={{ margin: '2px 0 0', color: 'var(--text-secondary)', fontSize: '11.5px' }}>{item.a}</p>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import AppShell from './components/common/AppShell';
 import StudentDashboard from './components/student/StudentDashboard';
 import StudentWorkspace from './components/student/StudentWorkspace';
@@ -318,17 +318,26 @@ export default function App() {
       if (currentUser?.role === 'student') {
         const studentAssignments = await getStudentAssignments(currentUser.id, subject.id);
         setAssignments(studentAssignments);
-        const prs = studentAssignments.map((a) => a.practical).filter(Boolean);
+        let prs = studentAssignments.map((a) => a.practical).filter(Boolean);
+        // If no batch assignments exist for this subject, load subject catalog practicals so student can learn
+        if (prs.length === 0) {
+          prs = await getPracticalsBySubject(subject.id);
+        }
         setPracticals(prs);
         if (prs.length > 0) {
           const firstPrac = prs[0];
           setCurrentPractical(firstPrac);
-          setCode(firstPrac.starterCodes?.[language] || firstPrac.starterCodes?.cpp || '');
+          let targetLang = language;
+          if (firstPrac.starterCodes?.cpp?.includes('no C++ implementation') && firstPrac.starterCodes?.python) {
+            targetLang = 'python';
+            setLanguage('python');
+          }
+          setCode(firstPrac.starterCodes?.[targetLang] || firstPrac.starterCodes?.cpp || '');
         } else {
           setCurrentPractical(null);
           setCode('');
         }
-        addToast(`Loaded ${subject.name || subject.code} assignments`, 'info');
+        addToast(`Loaded ${subject.name || subject.code} practicals`, 'info');
       } else {
         const prs = await getPracticalsBySubject(subject.id);
         setPracticals(prs);
@@ -351,7 +360,12 @@ export default function App() {
   const handleSelectPractical = (selected, options = {}) => {
     if (!selected) return;
     setCurrentPractical(selected);
-    const template = selected.starterCodes?.[language] || selected.starterCodes?.cpp || '';
+    let targetLang = language;
+    if (selected.starterCodes?.cpp?.includes('no C++ implementation') && selected.starterCodes?.python) {
+      targetLang = 'python';
+      setLanguage('python');
+    }
+    const template = selected.starterCodes?.[targetLang] || selected.starterCodes?.cpp || '';
     setCode(template);
     setEvaluationResult(null);
     setEvaluationPhase('idle');
@@ -604,6 +618,15 @@ export default function App() {
     }
   };
 
+  // All subject-relevant practicals for learning and visualization curriculum
+  const learningPracticals = useMemo(() => {
+    if (selectedSubject && syllabusPracticals.length > 0) {
+      const filtered = syllabusPracticals.filter((p) => p.subjectId === selectedSubject.id || p.subject_id === selectedSubject.id);
+      if (filtered.length > 0) return filtered;
+    }
+    return practicals.length > 0 ? practicals : syllabusPracticals;
+  }, [selectedSubject, syllabusPracticals, practicals]);
+
   // If not logged in, render the unified Authentication View
   if (!currentUser) {
     return <LoginView onLoginSuccess={handleLoginSuccess} />;
@@ -679,7 +702,7 @@ export default function App() {
         ) : activeNav === 'learning' ? (
           <StudentLearningView
             practical={currentPractical}
-            practicals={practicals}
+            practicals={learningPracticals}
             submissions={submissions}
             onSelectPractical={handleSelectPractical}
             onGoToWorkspace={handleOpenWorkspace}
@@ -688,7 +711,7 @@ export default function App() {
         ) : activeNav === 'visualizations' ? (
           <StudentVisualizationsView
             practical={currentPractical}
-            practicals={practicals}
+            practicals={learningPracticals}
             onSelectPractical={handleSelectPractical}
             onGoToWorkspace={handleOpenWorkspace}
           />

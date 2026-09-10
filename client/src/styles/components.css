@@ -4746,6 +4746,198 @@
   line-height: 1.45;
 }
 
+/* Flowchart & Media Section */
+.learning-flowchart-card {
+  padding: 20px 24px;
+  border: 1px solid var(--border-medium);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.flowchart-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.flowchart-viewport {
+  position: relative;
+  width: 100%;
+  min-height: 240px;
+  max-height: 500px;
+  background: #FFFFFF;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 20px;
+}
+
+.flowchart-img {
+  max-width: 100%;
+  max-height: 460px;
+  object-fit: contain;
+  transition: transform 0.2s ease;
+}
+
+.flowchart-loading,
+.flowchart-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.flowchart-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.flowchart-modal-content {
+  background: #FFFFFF;
+  border-radius: var(--radius-md);
+  max-width: 92vw;
+  max-height: 92vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+
+.flowchart-modal-header {
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.flowchart-modal-body {
+  padding: 24px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.flowchart-modal-body img {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+}
+
+/* Video & Tutorial Card */
+.learning-video-card {
+  padding: 20px 24px;
+  border: 1px solid var(--border-medium);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.video-player-container {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+  height: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #0F172A;
+  border: 1px solid var(--border-medium);
+}
+
+.video-player-container iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.video-tutorial-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  background: var(--primary-subtle);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+}
+
+/* Algorithm & Pseudocode Sub-Tabs */
+.algo-subnav-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 12px;
+}
+
+.algo-subnav-tab {
+  padding: 5px 12px;
+  border-radius: var(--radius-xs);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.algo-subnav-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #FFFFFF;
+}
+
+/* Concepts & Notes Grid */
+.concept-item-card {
+  padding: 10px 14px;
+  background: #FFFFFF;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  margin-bottom: 8px;
+}
+
+.concept-item-card strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.concept-item-card p {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+}
+
 /* 8. Start Coding CTA */
 .start-coding-surface {
   background: linear-gradient(135deg, #FFFFFF 0%, #F5F8FF 100%);

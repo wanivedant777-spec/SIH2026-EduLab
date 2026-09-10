@@ -19,6 +19,14 @@ import {
   ChevronUp,
   HelpCircle,
   Zap,
+  ExternalLink,
+  Maximize2,
+  X,
+  Video,
+  GitBranch,
+  FileText,
+  AlertCircle,
+  TrendingUp,
 } from 'lucide-react';
 import PageHeader from '../ui/PageHeader';
 import Badge from '../ui/Badge';
@@ -26,8 +34,8 @@ import Button from '../ui/Button';
 import Card from '../ui/Card';
 import Hero3DObject from './Hero3DObject';
 
-// Curricular Step-by-Step Visualization Data
-const ALGORITHM_VISUALIZATION_STEPS = {
+// Curricular Fallback Step-by-Step Visualization Data (Only for legacy fallback)
+const FALLBACK_VISUALIZATION_STEPS = {
   bst: [
     {
       step: 0,
@@ -216,6 +224,24 @@ const ALGORITHM_VISUALIZATION_STEPS = {
   ]
 };
 
+// Safe helper to extract embeddable YouTube URL
+function getYouTubeEmbedUrl(url) {
+  if (!url) return null;
+  const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+  if (match && match[1]) {
+    return `https://www.youtube-nocookie.com/embed/${match[1]}`;
+  }
+  return null;
+}
+
+// Format key helper (e.g. 'linear_search' -> 'Linear Search')
+function formatLabel(key) {
+  if (!key) return '';
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function StudentLearningView({
   practical,
   practicals = [],
@@ -236,8 +262,87 @@ export default function StudentLearningView({
     return practicals[0] || null;
   }, [practical, selectedId, practicals]);
 
+  // Raw Database Content Extraction (Source of Truth)
+  const theoryContent = useMemo(() => {
+    return activePractical?.theory_content || activePractical?.theoryContent || {};
+  }, [activePractical]);
+
+  // Algorithm data handling: can be array of strings, object of arrays, or array of step objects
+  const rawAlgorithm = useMemo(() => {
+    return theoryContent?.algorithm !== undefined
+      ? theoryContent.algorithm
+      : (activePractical?.algorithm || null);
+  }, [theoryContent, activePractical]);
+
+  const algorithmVariants = useMemo(() => {
+    if (!rawAlgorithm) return {};
+    if (Array.isArray(rawAlgorithm)) {
+      return { 'Algorithm Procedure': rawAlgorithm };
+    }
+    if (typeof rawAlgorithm === 'object') {
+      return rawAlgorithm;
+    }
+    return {};
+  }, [rawAlgorithm]);
+
+  const algorithmKeys = useMemo(() => Object.keys(algorithmVariants), [algorithmVariants]);
+  const [selectedAlgoKey, setSelectedAlgoKey] = useState(algorithmKeys[0] || null);
+
+  useEffect(() => {
+    setSelectedAlgoKey(algorithmKeys[0] || null);
+  }, [algorithmKeys]);
+
+  const currentAlgoSteps = useMemo(() => {
+    if (!algorithmKeys.length) return [];
+    const key = selectedAlgoKey && algorithmVariants[selectedAlgoKey] ? selectedAlgoKey : algorithmKeys[0];
+    const steps = algorithmVariants[key] || [];
+    return Array.isArray(steps) ? steps : [];
+  }, [algorithmVariants, algorithmKeys, selectedAlgoKey]);
+
+  // Pseudocode data handling: can be string or object of variants
+  const rawPseudocode = useMemo(() => {
+    return theoryContent?.pseudocode !== undefined
+      ? theoryContent.pseudocode
+      : (activePractical?.pseudocode || '');
+  }, [theoryContent, activePractical]);
+
+  const pseudocodeVariants = useMemo(() => {
+    if (!rawPseudocode) return {};
+    if (typeof rawPseudocode === 'string') {
+      return { 'Canonical Pseudocode': rawPseudocode };
+    }
+    if (typeof rawPseudocode === 'object') {
+      return rawPseudocode;
+    }
+    return {};
+  }, [rawPseudocode]);
+
+  const pseudocodeKeys = useMemo(() => Object.keys(pseudocodeVariants), [pseudocodeVariants]);
+  const [selectedPseudoKey, setSelectedPseudoKey] = useState(pseudocodeKeys[0] || null);
+
+  useEffect(() => {
+    setSelectedPseudoKey(pseudocodeKeys[0] || null);
+  }, [pseudocodeKeys]);
+
+  const currentPseudocodeText = useMemo(() => {
+    if (!pseudocodeKeys.length) return '';
+    const key = selectedPseudoKey && pseudocodeVariants[selectedPseudoKey] ? selectedPseudoKey : pseudocodeKeys[0];
+    const val = pseudocodeVariants[key];
+    return typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+  }, [pseudocodeVariants, pseudocodeKeys, selectedPseudoKey]);
+
   // Pseudocode copied state
   const [copied, setCopied] = useState(false);
+
+  // Flowchart URL & state
+  const flowchartUrl = activePractical?.flowchartUrl || activePractical?.flowchart_url || theoryContent?.flowchart_url || null;
+  const [flowchartLoading, setFlowchartLoading] = useState(true);
+  const [flowchartError, setFlowchartError] = useState(false);
+  const [isFlowchartModalOpen, setIsFlowchartModalOpen] = useState(false);
+
+  // Video URL
+  const videoUrl = activePractical?.videoUrl || activePractical?.video_url || theoryContent?.video_url || null;
+  const youtubeEmbedUrl = useMemo(() => getYouTubeEmbedUrl(videoUrl), [videoUrl]);
 
   // Visualization Stepping Controls State
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -248,44 +353,51 @@ export default function StudentLearningView({
   // Practice check accordion state
   const [revealedAnswers, setRevealedAnswers] = useState({});
 
-  // Determine visualization steps array for this practical
-  const activeSteps = useMemo(() => {
-    if (!activePractical) return [];
-    const pracId = (activePractical.id || '').toLowerCase();
-    const title = (activePractical.title || '').toLowerCase();
-
-    if (pracId.includes('dijkstra') || title.includes('dijkstra') || title.includes('shortest path')) {
-      return ALGORITHM_VISUALIZATION_STEPS.dijkstra;
-    }
-    if (pracId.includes('avl') || title.includes('avl') || title.includes('balanced tree')) {
-      return ALGORITHM_VISUALIZATION_STEPS.avl;
-    }
-    // Default to BST steps or dynamically construct from algorithm steps
-    if (activePractical.algorithm && activePractical.algorithm.length > 0) {
-      if (pracId.includes('bst') || title.includes('binary search tree')) {
-        return ALGORITHM_VISUALIZATION_STEPS.bst;
-      }
-      return activePractical.algorithm.map((step, idx) => ({
-        step: idx,
-        activeNodeId: idx,
-        visitedNodeIds: Array.from({ length: idx }, (_, i) => i),
-        currentNode: `Node P${idx + 1}`,
-        stack: `Step ${idx + 1} / ${activePractical.algorithm.length}`,
-        traversalOrder: `Invariants verified`,
-        stateSummary: step.title || `Algorithm Step ${idx + 1}`,
-        explanation: step.detail || `Execute algorithmic step ${idx + 1}.`,
-      }));
-    }
-    return ALGORITHM_VISUALIZATION_STEPS.bst;
-  }, [activePractical]);
-
-  // Reset stepping when practical changes (React recommended pattern for state adjustment from prop)
+  // Reset stepping and media states when practical changes
   const [prevPracticalId, setPrevPracticalId] = useState(activePractical?.id);
   if (activePractical?.id !== prevPracticalId) {
     setPrevPracticalId(activePractical?.id);
     setCurrentStepIndex(0);
     setIsPlaying(false);
+    setFlowchartLoading(true);
+    setFlowchartError(false);
   }
+
+  // Derive data-driven visualization steps from the current practical's real algorithm
+  const activeSteps = useMemo(() => {
+    if (!activePractical) return [];
+
+    // If practical provides real algorithm steps in database, use them directly!
+    if (currentAlgoSteps && currentAlgoSteps.length > 0) {
+      return currentAlgoSteps.map((stepItem, idx) => {
+        const isString = typeof stepItem === 'string';
+        const title = isString ? stepItem : (stepItem.title || `Step ${idx + 1}`);
+        const detail = isString ? stepItem : (stepItem.detail || stepItem.title || '');
+
+        return {
+          step: idx,
+          activeNodeId: idx,
+          visitedNodeIds: Array.from({ length: idx }, (_, i) => i),
+          currentNode: `Step ${idx + 1}`,
+          stack: `State Machine [${idx + 1} / ${currentAlgoSteps.length}]`,
+          traversalOrder: `Invariants active`,
+          stateSummary: title,
+          explanation: detail,
+        };
+      });
+    }
+
+    // Fallback only if practical has NO database algorithm at all
+    const pracId = (activePractical.id || '').toLowerCase();
+    const title = (activePractical.title || '').toLowerCase();
+    if (pracId.includes('dijkstra') || title.includes('dijkstra') || title.includes('shortest path')) {
+      return FALLBACK_VISUALIZATION_STEPS.dijkstra;
+    }
+    if (pracId.includes('avl') || title.includes('avl') || title.includes('balanced tree')) {
+      return FALLBACK_VISUALIZATION_STEPS.avl;
+    }
+    return FALLBACK_VISUALIZATION_STEPS.bst;
+  }, [activePractical, currentAlgoSteps]);
 
   // Playback timer effect
   useEffect(() => {
@@ -307,16 +419,16 @@ export default function StudentLearningView({
 
   const currentStepData = activeSteps[currentStepIndex] || activeSteps[0] || {
     step: 0,
-    currentNode: 'Root',
+    currentNode: 'Active',
     stack: '[]',
     traversalOrder: '[]',
-    stateSummary: 'Ready to trace invariants',
-    explanation: 'Step through the visualization controls above to observe state transitions.',
+    stateSummary: 'Ready to trace procedure',
+    explanation: 'Step through controls to inspect state transitions.',
   };
 
   const handleCopyPseudocode = () => {
-    if (!activePractical?.pseudocode) return;
-    navigator.clipboard.writeText(activePractical.pseudocode);
+    if (!currentPseudocodeText) return;
+    navigator.clipboard.writeText(currentPseudocodeText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -345,103 +457,111 @@ export default function StudentLearningView({
     return { label: 'Submitted', variant: 'warning' };
   }, [practicalSubmission]);
 
-  // Extract structured learning metadata from practical
+  // Structured learning metadata extracted directly from database record
   const practicalNumber = activePractical?.practicalNumber || 1;
   const practicalTitle = activePractical?.title || 'Practical Laboratory Exercise';
-  const topicName = activePractical?.category || activePractical?.topic || selectedSubject?.name || 'Data Structures & Algorithms';
-  const difficulty = activePractical?.difficulty || 'Medium';
-  const estimatedTime = activePractical?.avgTime || '30 Mins';
-  const aimText = activePractical?.aim || 'Implement the algorithmic procedure satisfying time and space bounds.';
+  const topicName = theoryContent?.category || activePractical?.category || selectedSubject?.name || 'Computer Science Lab';
+  const difficulty = theoryContent?.difficulty || activePractical?.difficulty || 'Medium';
+  const estimatedTime = theoryContent?.estimated_time_minutes
+    ? `${theoryContent.estimated_time_minutes} Mins`
+    : (activePractical?.avgTime || '30 Mins');
+  const aimText = activePractical?.aim || 'Implement the algorithmic procedure according to standard curricular specifications.';
 
-  // Curricular Objectives derived from practical
-  const objectives = useMemo(() => {
+  // Real Learning Objectives from Database
+  const learningPoints = useMemo(() => {
+    if (Array.isArray(theoryContent?.learning_points) && theoryContent.learning_points.length > 0) {
+      return theoryContent.learning_points;
+    }
+    if (Array.isArray(theoryContent?.objectives) && theoryContent.objectives.length > 0) {
+      return theoryContent.objectives;
+    }
+    if (Array.isArray(theoryContent?.key_points) && theoryContent.key_points.length > 0) {
+      return theoryContent.key_points;
+    }
     return [
-      `Analyze the fundamental structural invariant and pointer mechanics of ${topicName}.`,
-      'Implement memory-efficient recursive and iterative operations conforming to curriculum standards.',
-      'Validate time and space complexity bounds under automated compiler test suites.',
-      'Prepare for viva examination by articulating invariant proofs and trade-offs.',
+      `Understand and implement ${practicalTitle}.`,
+      'Trace procedural logic and verify edge cases under automated test suites.',
+      'Analyze computational complexity and prepare for curricular viva.',
     ];
-  }, [topicName]);
+  }, [theoryContent, practicalTitle]);
 
-  // Prerequisites
+  // Real Prerequisites from Database
   const prerequisites = useMemo(() => {
+    if (Array.isArray(theoryContent?.prerequisites) && theoryContent.prerequisites.length > 0) {
+      return theoryContent.prerequisites;
+    }
     return [
-      'Basic programming syntax (C++20 / Python 3 / Java)',
-      'Memory management & pointers / reference mechanics',
-      'Asymptotic Big-O notation & recursion fundamentals',
+      'Foundational programming syntax and control statements',
+      'Basic input/output operations and data structures',
+      'Understanding of procedural execution bounds',
     ];
-  }, []);
+  }, [theoryContent]);
 
-  // Complexities
-  const complexities = useMemo(() => {
-    const isTree = topicName.toLowerCase().includes('tree') || topicName.toLowerCase().includes('bst');
-    const isGraph = topicName.toLowerCase().includes('graph') || topicName.toLowerCase().includes('dijkstra');
+  // Real Complexity and Comparison from Database
+  const complexityData = theoryContent?.complexity || null;
+  const comparisonData = theoryContent?.comparison || null;
 
-    if (isGraph) {
-      return {
-        bestTime: 'O(V + E)',
-        avgTime: 'O((V + E) log V)',
-        worstTime: 'O(V²)',
-        space: 'O(V + E) Adjacency Heap',
-      };
-    }
-    if (isTree) {
-      return {
-        bestTime: 'O(1) Root Lookup',
-        avgTime: 'O(log N) Balanced',
-        worstTime: 'O(N) Skewed Case',
-        space: 'O(H) Call Stack Depth',
-      };
-    }
-    return {
-      bestTime: 'O(1)',
-      avgTime: 'O(N)',
-      worstTime: 'O(N)',
-      space: 'O(1) Auxiliary Memory',
-    };
-  }, [topicName]);
+  // Real Concepts from Database
+  const conceptsData = theoryContent?.concepts || null;
+  const operatorsData = theoryContent?.operators || null;
 
-  // Key terminology
-  const terminology = useMemo(() => {
-    const isTree = topicName.toLowerCase().includes('tree') || topicName.toLowerCase().includes('bst');
-    const isGraph = topicName.toLowerCase().includes('graph') || topicName.toLowerCase().includes('dijkstra');
-
-    if (isGraph) {
-      return ['Vertex (V)', 'Edge (E)', 'Weight Function', 'Priority Queue', 'Relaxation Invariant', 'Greedy Choice'];
-    }
-    if (isTree) {
-      return ['Root Node', 'Subtree', 'Leaf Node', 'BST Invariant (L < Root ≤ R)', 'Inorder Traversal', 'Tree Height'];
-    }
-    return ['Head Pointer', 'Node Structure', 'Next Pointer', 'Traversal Invariant', 'Memory Allocation', 'NULL Sentinel'];
-  }, [topicName]);
-
-  // Worked example data (real sample test case)
+  // Real Worked Example Data from Database (examples array or first sample test case)
   const sampleTestCase = useMemo(() => {
+    if (Array.isArray(theoryContent?.examples) && theoryContent.examples.length > 0) {
+      const ex = theoryContent.examples[0];
+      return {
+        input_data: ex.input || ex.stdin || 'Standard input',
+        expected_output: ex.output || ex.stdout || ex.sum_recursive || ex.factorial_recursive || '',
+        note: ex.type || 'Curricular example from specification',
+      };
+    }
     if (activePractical?.testCases && activePractical.testCases.length > 0) {
-      return activePractical.testCases[0];
+      const sampleTc = activePractical.testCases.find((tc) => tc.is_sample) || activePractical.testCases[0];
+      return {
+        input_data: sampleTc.input_data || '(None)',
+        expected_output: sampleTc.expected_output || '',
+        note: 'Live sample test case from database harness',
+      };
     }
     return {
-      input_data: '5\n30 20 40 10 25',
-      expected_output: '10 20 25 30 40',
+      input_data: 'Standard input sequence',
+      expected_output: 'Verified deterministic output',
+      note: 'Verification harness',
     };
-  }, [activePractical]);
+  }, [theoryContent, activePractical]);
 
-  // Viva prompts for Practice Check
+  // Real or Derived Viva Prompts
   const practicePrompts = useMemo(() => {
-    if (activePractical?.vivaPrompts && activePractical.vivaPrompts.length > 0) {
+    if (Array.isArray(activePractical?.vivaPrompts) && activePractical.vivaPrompts.length > 0) {
       return activePractical.vivaPrompts;
     }
-    return [
+    if (Array.isArray(theoryContent?.viva_prompts) && theoryContent.viva_prompts.length > 0) {
+      return theoryContent.viva_prompts;
+    }
+
+    const prompts = [
       {
-        q: 'What is the primary invariant maintained by this data structure?',
-        a: 'The invariant ensures that all elements in the left subtree remain strictly less than the node key, while right subtree elements are greater than or equal, guaranteeing deterministic O(log N) lookup in balanced states.',
-      },
-      {
-        q: 'Under what conditions does performance degrade to worst-case O(N)?',
-        a: 'When elements are inserted in monotonically increasing or decreasing order, the structure degrades into a single linked chain, making the height H = N and search linear.',
+        q: `What is the primary objective of "${practicalTitle}"?`,
+        a: aimText,
       },
     ];
-  }, [activePractical]);
+
+    if (theoryContent?.theory) {
+      prompts.push({
+        q: 'What is the core theoretical principle underlying this experiment?',
+        a: theoryContent.theory,
+      });
+    }
+
+    if (learningPoints && learningPoints.length > 0) {
+      prompts.push({
+        q: 'What are the key technical outcomes you verify during implementation?',
+        a: learningPoints.join(' • '),
+      });
+    }
+
+    return prompts;
+  }, [activePractical, theoryContent, practicalTitle, aimText, learningPoints]);
 
   return (
     <div className="learning-view-page" id="student-learning-root">
@@ -539,7 +659,7 @@ export default function StudentLearningView({
         )}
 
         {/* =========================================================
-            1. PRACTICAL HEADER
+            1. PRACTICAL HEADER (LIVE CONTEXT)
             ========================================================= */}
         <section aria-label="Practical Overview Header">
           <Card surface="white" className="practical-header-card">
@@ -564,6 +684,11 @@ export default function StudentLearningView({
                   >
                     {difficulty}
                   </Badge>
+                  {theoryContent?.co_mapping && (
+                    <Badge variant="neutral" size="sm">
+                      {theoryContent.co_mapping}
+                    </Badge>
+                  )}
                 </div>
                 <h1 className="practical-header-title">{practicalTitle}</h1>
                 <div className="practical-header-meta-row">
@@ -579,7 +704,7 @@ export default function StudentLearningView({
                   <span>•</span>
                   <span className="practical-header-meta-item">
                     <Award size={13} color="var(--primary)" />
-                    <strong>Rubric:</strong> 3M Code (Auto) + 5M Writeup + 2M Viva
+                    <strong>Rubric:</strong> {activePractical?.maxCodingMarks || 3}M Code (Auto) + {activePractical?.maxWriteupMarks || 5}M Writeup + {activePractical?.maxVivaMarks || 2}M Viva
                   </span>
                 </div>
               </div>
@@ -600,7 +725,7 @@ export default function StudentLearningView({
         </section>
 
         {/* =========================================================
-            2. LEARNING OVERVIEW
+            2. LEARNING OVERVIEW & OBJECTIVES (REAL DB CONTENT)
             ========================================================= */}
         <section aria-label="Learning Overview">
           <div className="learning-section-head">
@@ -617,10 +742,10 @@ export default function StudentLearningView({
             </Card>
 
             <Card surface="white" className="overview-card-col">
-              <span className="overview-col-label">Core Objectives</span>
+              <span className="overview-col-label">Core Learning Points</span>
               <ul className="overview-bullet-list">
-                {objectives.map((obj, i) => (
-                  <li key={i}>{obj}</li>
+                {learningPoints.map((pt, i) => (
+                  <li key={i}>{pt}</li>
                 ))}
               </ul>
             </Card>
@@ -637,13 +762,176 @@ export default function StudentLearningView({
         </section>
 
         {/* =========================================================
-            3. CONCEPT
+            3. REAL FLOWCHART (SUPABASE flowchart_url)
+            ========================================================= */}
+        {flowchartUrl && (
+          <section aria-label="Laboratory Flowchart">
+            <div className="learning-section-head">
+              <div className="learning-section-title-wrap">
+                <GitBranch size={16} color="var(--primary)" />
+                <h2 className="learning-section-heading">Algorithmic Flowchart &amp; Execution Diagram</h2>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={Maximize2}
+                  onClick={() => setIsFlowchartModalOpen(true)}
+                  title="Expand Flowchart to Fullscreen"
+                >
+                  Fullscreen
+                </Button>
+                <a
+                  href={flowchartUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <Button variant="ghost" size="sm" icon={ExternalLink}>
+                    Open SVG
+                  </Button>
+                </a>
+              </div>
+            </div>
+
+            <Card surface="white" className="learning-flowchart-card">
+              <div className="flowchart-viewport">
+                {flowchartLoading && (
+                  <div className="flowchart-loading">
+                    <div className="animate-spin" style={{ width: 28, height: 28, border: '3px solid var(--border-medium)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
+                    <span>Loading diagram directly from Supabase CDN...</span>
+                  </div>
+                )}
+
+                {flowchartError ? (
+                  <div className="flowchart-error">
+                    <AlertCircle size={24} color="var(--warning)" />
+                    <span>Unable to render flowchart inline.</span>
+                    <a
+                      href={flowchartUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'var(--primary)', fontSize: '12px', fontWeight: 600 }}
+                    >
+                      Click here to open flowchart in new tab ↗
+                    </a>
+                  </div>
+                ) : (
+                  <img
+                    src={flowchartUrl}
+                    alt={`Flowchart diagram for ${practicalTitle}`}
+                    className="flowchart-img"
+                    onLoad={() => setFlowchartLoading(false)}
+                    onError={() => {
+                      setFlowchartLoading(false);
+                      setFlowchartError(true);
+                    }}
+                    style={{ display: flowchartLoading ? 'none' : 'block' }}
+                  />
+                )}
+              </div>
+            </Card>
+
+            {/* Fullscreen Zoom Modal */}
+            {isFlowchartModalOpen && (
+              <div
+                className="flowchart-modal-backdrop"
+                onClick={() => setIsFlowchartModalOpen(false)}
+                role="dialog"
+                aria-label="Fullscreen Flowchart Modal"
+              >
+                <div
+                  className="flowchart-modal-content"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flowchart-modal-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <GitBranch size={16} color="var(--primary)" />
+                      <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
+                        {practicalTitle} · Flowchart
+                      </strong>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={X}
+                      onClick={() => setIsFlowchartModalOpen(false)}
+                      title="Close"
+                    />
+                  </div>
+                  <div className="flowchart-modal-body">
+                    <img
+                      src={flowchartUrl}
+                      alt={`Flowchart for ${practicalTitle}`}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* =========================================================
+            4. REAL VIDEO & INTERACTIVE TUTORIAL (SUPABASE video_url)
+            ========================================================= */}
+        {videoUrl && (
+          <section aria-label="Curricular Video Tutorial">
+            <div className="learning-section-head">
+              <div className="learning-section-title-wrap">
+                <Video size={16} color="var(--primary)" />
+                <h2 className="learning-section-heading">Curricular Video &amp; Interactive Learning Resource</h2>
+              </div>
+            </div>
+
+            <Card surface="white" className="learning-video-card">
+              {youtubeEmbedUrl ? (
+                <div className="video-player-container">
+                  <iframe
+                    src={youtubeEmbedUrl}
+                    title={`Video Tutorial for ${practicalTitle}`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : (
+                <div className="video-tutorial-card">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-sm)', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', flexShrink: 0 }}>
+                      <Video size={22} />
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)', display: 'block' }}>
+                        Curricular Interactive Practice &amp; Video Walkthrough
+                      </strong>
+                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        Linked reference tutorial for {practicalTitle}: <code style={{ fontSize: '11px' }}>{videoUrl}</code>
+                      </span>
+                    </div>
+                  </div>
+                  <a
+                    href={videoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <Button variant="primary" size="sm" iconRight={ExternalLink}>
+                      Open Resource
+                    </Button>
+                  </a>
+                </div>
+              )}
+            </Card>
+          </section>
+        )}
+
+        {/* =========================================================
+            5. THEORY SPECIFICATION & COMPLEXITY (REAL DB CONTENT)
             ========================================================= */}
         <section aria-label="Concept & Theoretical Invariants">
           <div className="learning-section-head">
             <div className="learning-section-title-wrap">
               <Zap size={16} color="var(--primary)" />
-              <h2 className="learning-section-heading">Concept &amp; Asymptotic Complexity</h2>
+              <h2 className="learning-section-heading">Theoretical Specification &amp; Analysis</h2>
             </div>
           </div>
 
@@ -651,43 +939,126 @@ export default function StudentLearningView({
             <Card surface="white" className="concept-theory-card">
               <span className="overview-col-label">Theoretical Specification</span>
               <p className="concept-theory-p">
-                This laboratory exercise focuses on maintaining deterministic structural invariants during dynamic memory updates. Every operation guarantees correct pointer manipulation without dangling references, memory leaks, or invariant violations.
+                {theoryContent?.theory || theoryContent?.explanation || aimText}
               </p>
 
-              <span className="overview-col-label" style={{ marginTop: '6px' }}>Key Technical Terminology</span>
-              <div className="terminology-chip-wrap">
-                {terminology.map((term, i) => (
-                  <span key={i} className="terminology-chip font-mono">
-                    {term}
-                  </span>
-                ))}
-              </div>
+              {/* Real Database Concepts Dictionary */}
+              {conceptsData && typeof conceptsData === 'object' && (
+                <div style={{ marginTop: '14px' }}>
+                  <span className="overview-col-label" style={{ marginBottom: '8px' }}>Curricular Concepts</span>
+                  <div>
+                    {Object.entries(conceptsData).map(([key, val]) => (
+                      <div key={key} className="concept-item-card">
+                        <strong>{formatLabel(key)}:</strong>
+                        <p>{Array.isArray(val) ? val.join(', ') : String(val)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Real Database Operators Dictionary */}
+              {operatorsData && typeof operatorsData === 'object' && (
+                <div style={{ marginTop: '14px' }}>
+                  <span className="overview-col-label" style={{ marginBottom: '8px' }}>Operators Specification</span>
+                  <div>
+                    {Object.entries(operatorsData).map(([opKey, opVal]) => (
+                      <div key={opKey} className="concept-item-card">
+                        <strong>{formatLabel(opKey)}:</strong>
+                        <p>{String(opVal)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Real Database Important Note */}
+              {theoryContent?.important_note && (
+                <div style={{ marginTop: '12px', padding: '10px 14px', background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.25)', borderRadius: 'var(--radius-xs)', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  <strong style={{ color: '#854d0e', display: 'block', marginBottom: '2px' }}>Important Note:</strong>
+                  {theoryContent.important_note}
+                </div>
+              )}
             </Card>
 
+            {/* Asymptotic Complexity / Comparison Card */}
             <Card surface="white" className="concept-complexity-card">
-              <span className="overview-col-label">Asymptotic Complexity Bounds</span>
-              <div className="complexity-metric-row">
-                <span className="complexity-metric-name">Best Case Time:</span>
-                <span className="complexity-metric-val font-mono">{complexities.bestTime}</span>
-              </div>
-              <div className="complexity-metric-row">
-                <span className="complexity-metric-name">Average Case Time:</span>
-                <span className="complexity-metric-val font-mono">{complexities.avgTime}</span>
-              </div>
-              <div className="complexity-metric-row">
-                <span className="complexity-metric-name">Worst Case Time:</span>
-                <span className="complexity-metric-val font-mono">{complexities.worstTime}</span>
-              </div>
-              <div className="complexity-metric-row">
-                <span className="complexity-metric-name">Auxiliary Space:</span>
-                <span className="complexity-metric-val font-mono">{complexities.space}</span>
-              </div>
+              <span className="overview-col-label">Computational Complexity &amp; Efficiency</span>
+
+              {complexityData && typeof complexityData === 'object' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                  {Object.entries(complexityData).map(([k, v]) => {
+                    if (typeof v === 'object' && v !== null) {
+                      return (
+                        <div key={k} style={{ padding: '8px 10px', background: 'var(--bg-canvas)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                          <strong style={{ fontSize: '11.5px', color: 'var(--text-primary)', display: 'block', marginBottom: '4px' }}>
+                            {formatLabel(k)}:
+                          </strong>
+                          {Object.entries(v).map(([subK, subV]) => (
+                            <div key={subK} className="complexity-metric-row">
+                              <span className="complexity-metric-name">{formatLabel(subK)}:</span>
+                              <span className="complexity-metric-val font-mono">{String(subV)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={k} className="complexity-metric-row">
+                        <span className="complexity-metric-name">{formatLabel(k)}:</span>
+                        <span className="complexity-metric-val font-mono">{String(v)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : comparisonData && typeof comparisonData === 'object' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                  {Object.entries(comparisonData).map(([compK, compV]) => (
+                    <div key={compK} style={{ padding: '8px 10px', background: 'var(--bg-canvas)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+                      <strong style={{ fontSize: '11.5px', color: 'var(--primary)', display: 'block', marginBottom: '4px' }}>
+                        {formatLabel(compK)}:
+                      </strong>
+                      {typeof compV === 'object' && compV !== null ? (
+                        Object.entries(compV).map(([subK, subV]) => (
+                          <div key={subK} className="complexity-metric-row">
+                            <span className="complexity-metric-name">{formatLabel(subK)}:</span>
+                            <span className="complexity-metric-val font-mono">{String(subV)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>{String(compV)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+                  <div className="complexity-metric-row">
+                    <span className="complexity-metric-name">Curricular Level:</span>
+                    <span className="complexity-metric-val font-mono">{activePractical?.nepLevel || 'Level 5'}</span>
+                  </div>
+                  <div className="complexity-metric-row">
+                    <span className="complexity-metric-name">Difficulty Rating:</span>
+                    <span className="complexity-metric-val font-mono">{difficulty}</span>
+                  </div>
+                  <div className="complexity-metric-row">
+                    <span className="complexity-metric-name">Standard Est. Time:</span>
+                    <span className="complexity-metric-val font-mono">{estimatedTime}</span>
+                  </div>
+                  {theoryContent?.co_mapping && (
+                    <div className="complexity-metric-row">
+                      <span className="complexity-metric-name">Course Outcome:</span>
+                      <span className="complexity-metric-val font-mono">{theoryContent.co_mapping}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
           </div>
         </section>
 
         {/* =========================================================
-            4. ALGORITHM
+            6. ALGORITHM & PSEUDOCODE (REAL DB CONTENT WITH SUB-TABS)
             ========================================================= */}
         <section aria-label="Algorithm & Pseudocode">
           <div className="learning-section-head">
@@ -698,29 +1069,59 @@ export default function StudentLearningView({
           </div>
 
           <div className="algorithm-content-grid">
+            {/* Algorithm Steps Card */}
             <Card surface="white" className="algorithm-steps-card">
-              <span className="overview-col-label">Numbered Procedural Steps</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span className="overview-col-label">Numbered Procedural Steps</span>
+                <Badge variant="neutral" size="sm">
+                  {currentAlgoSteps.length} Steps
+                </Badge>
+              </div>
+
+              {/* Sub-Tabs if practical has multiple algorithms (e.g. Linear vs Binary, or Bubble vs Insertion vs Selection) */}
+              {algorithmKeys.length > 1 && (
+                <div className="algo-subnav-tabs" role="tablist">
+                  {algorithmKeys.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={selectedAlgoKey === key}
+                      className={`algo-subnav-tab ${selectedAlgoKey === key ? 'active' : ''}`}
+                      onClick={() => setSelectedAlgoKey(key)}
+                    >
+                      {formatLabel(key)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="algo-step-list">
-                {(activePractical?.algorithm && activePractical.algorithm.length > 0
-                  ? activePractical.algorithm
-                  : [
-                      { title: 'Initialize Data Structure', detail: 'Allocate memory and initialize pointer references to sentinel / null states.' },
-                      { title: 'Evaluate Input Arguments', detail: 'Verify input bounds and maintain structural invariants before insertion/traversal.' },
-                      { title: 'Execute Core Traversal', detail: 'Traverse structure respecting deterministic ordering constraints.' },
-                      { title: 'Emit Verified Output', detail: 'Format standard output matching test suite specifications.' },
-                    ]
-                ).map((step, idx) => (
-                  <div key={idx} className="algo-step-item">
-                    <div className="algo-step-num font-mono">{idx + 1}</div>
-                    <div className="algo-step-body">
-                      <h3 className="algo-step-title">{step.title}</h3>
-                      <p className="algo-step-detail">{step.detail}</p>
-                    </div>
+                {currentAlgoSteps.length > 0 ? (
+                  currentAlgoSteps.map((step, idx) => {
+                    const isString = typeof step === 'string';
+                    const titleText = isString ? step : (step.title || `Step ${idx + 1}`);
+                    const detailText = isString ? null : step.detail;
+
+                    return (
+                      <div key={idx} className="algo-step-item">
+                        <div className="algo-step-num font-mono">{idx + 1}</div>
+                        <div className="algo-step-body">
+                          <h3 className="algo-step-title">{titleText}</h3>
+                          {detailText && <p className="algo-step-detail">{detailText}</p>}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={{ padding: '24px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12.5px' }}>
+                    Standard procedural algorithm steps are loaded in Code Lab starter files.
                   </div>
-                ))}
+                )}
               </div>
             </Card>
 
+            {/* Pseudocode Card */}
             <Card surface="white" className="pseudocode-card">
               <div className="pseudocode-head-bar">
                 <span className="overview-col-label">Algorithmic Pseudocode</span>
@@ -729,27 +1130,39 @@ export default function StudentLearningView({
                   size="xs"
                   icon={copied ? Check : Copy}
                   onClick={handleCopyPseudocode}
+                  disabled={!currentPseudocodeText}
                 >
                   {copied ? 'Copied' : 'Copy Code'}
                 </Button>
               </div>
+
+              {/* Sub-Tabs if multiple pseudocode implementations are stored */}
+              {pseudocodeKeys.length > 1 && (
+                <div className="algo-subnav-tabs" role="tablist">
+                  {pseudocodeKeys.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={selectedPseudoKey === key}
+                      className={`algo-subnav-tab ${selectedPseudoKey === key ? 'active' : ''}`}
+                      onClick={() => setSelectedPseudoKey(key)}
+                    >
+                      {formatLabel(key)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <pre className="pseudocode-pre">
-                {activePractical?.pseudocode ||
-`function EXECUTE_ALGORITHM(root, input):
-    if root is NULL then:
-        return CREATE_NODE(input)
-    if input < root.value then:
-        root.left = EXECUTE_ALGORITHM(root.left, input)
-    else:
-        root.right = EXECUTE_ALGORITHM(root.right, input)
-    return root`}
+                {currentPseudocodeText || '// No pseudocode specification provided for this practical in database catalog.'}
               </pre>
             </Card>
           </div>
         </section>
 
         {/* =========================================================
-            5. INTERACTIVE VISUALIZATION (VISUAL CENTERPIECE)
+            7. INTERACTIVE 3D VISUALIZATION (DATA-DRIVEN)
             ========================================================= */}
         <section aria-label="Interactive Visualizer">
           <div className="learning-section-head">
@@ -758,7 +1171,7 @@ export default function StudentLearningView({
               <h2 className="learning-section-heading">Interactive 3D Algorithm Simulation (Visual Centerpiece)</h2>
             </div>
             <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Drag to orbit in 3D • Use playback controls to step through invariants
+              Drag to orbit in 3D • Use playback controls to step through real algorithmic states
             </span>
           </div>
 
@@ -771,6 +1184,7 @@ export default function StudentLearningView({
                   size="sm"
                   icon={isPlaying ? Pause : Play}
                   onClick={() => setIsPlaying(!isPlaying)}
+                  disabled={activeSteps.length <= 1}
                 >
                   {isPlaying ? 'Pause' : 'Play Trace'}
                 </Button>
@@ -865,15 +1279,15 @@ export default function StudentLearningView({
               <div className="vis-state-readout-col font-mono">
                 <span className="overview-col-label">Active State Machine</span>
                 <div className="vis-state-row">
-                  <span className="vis-state-key">Current Node:</span>
+                  <span className="vis-state-key">Current State:</span>
                   <span className="vis-state-val">{currentStepData.currentNode}</span>
                 </div>
                 <div className="vis-state-row">
-                  <span className="vis-state-key">Call Stack / PQ:</span>
+                  <span className="vis-state-key">Execution Stack:</span>
                   <span className="vis-state-val">{currentStepData.stack}</span>
                 </div>
                 <div className="vis-state-row">
-                  <span className="vis-state-key">Traversal Output:</span>
+                  <span className="vis-state-key">Procedure Phase:</span>
                   <span className="vis-state-val">{currentStepData.traversalOrder}</span>
                 </div>
                 <div className="vis-state-row">
@@ -893,7 +1307,7 @@ export default function StudentLearningView({
         </section>
 
         {/* =========================================================
-            6. WORKED EXAMPLE
+            8. WORKED EXAMPLE (REAL DB INPUT & OUTPUT)
             ========================================================= */}
         <section aria-label="Worked Example">
           <div className="learning-section-head">
@@ -909,17 +1323,17 @@ export default function StudentLearningView({
                 <span className="worked-box-label">Standard Input (STDIN)</span>
                 <pre className="worked-box-content">{sampleTestCase.input_data}</pre>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Array / node sequence to process
+                  {sampleTestCase.note}
                 </span>
               </div>
 
               <div className="worked-box" style={{ background: '#FFFFFF' }}>
                 <span className="worked-box-label">Algorithmic Process Walkthrough</span>
                 <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
-                  1. Parse elements sequentially from standard input.<br />
-                  2. For each element, traverse pointer hierarchy and link into position maintaining invariant ordering.<br />
-                  3. Perform required traversal (Inorder / Relaxation) collecting visited node keys.<br />
-                  4. Verify that the output meets format requirements with single trailing newline.
+                  1. Parse input tokens from standard input (stdin) matching the experiment interface.<br />
+                  2. Execute the procedure satisfying {topicName} operational constraints.<br />
+                  3. Verify structural and value invariants for each boundary condition.<br />
+                  4. Stream standard output formatted strictly matching automated compiler test cases.
                 </p>
               </div>
 
@@ -929,7 +1343,7 @@ export default function StudentLearningView({
                   {sampleTestCase.expected_output}
                 </pre>
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Evaluated with automated test harness
+                  Evaluated with automated Judge0 test harness
                 </span>
               </div>
             </div>
@@ -937,7 +1351,7 @@ export default function StudentLearningView({
         </section>
 
         {/* =========================================================
-            7. PRACTICE CHECK
+            9. PRACTICE CHECK & VIVA PROMPTS (DATA-DRIVEN)
             ========================================================= */}
         <section aria-label="Practice Check">
           <div className="learning-section-head">
@@ -987,7 +1401,7 @@ export default function StudentLearningView({
         </section>
 
         {/* =========================================================
-            8. START CODING CTA (STRONGEST ACTION)
+            10. START CODING CTA (STRONGEST ACTION)
             ========================================================= */}
         <section aria-label="Start Coding in Workspace">
           <div className="start-coding-surface">
@@ -998,7 +1412,7 @@ export default function StudentLearningView({
               </div>
               <h2 className="start-coding-title">Ready to Write &amp; Test Your Code?</h2>
               <p className="start-coding-desc">
-                Starter templates, compilation toolchains (C++20, Python 3, Java), and automated Judge0 test harnesses are pre-loaded in your Code Lab environment.
+                Starter templates, compilation toolchains (C++20, C17, Python 3, Java 21), and automated Judge0 test harnesses are pre-loaded in your Code Lab environment.
               </p>
             </div>
 
