@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { Code2, RotateCcw, ShieldCheck } from 'lucide-react';
 import Button from '../ui/Button';
@@ -11,16 +11,210 @@ export default function CodeEditor({
   onResetCode,
   isAutoSaving = false,
   showToolbar = false,
+  onPasteBlocked,
+  onCopyBlocked,
+  academicIntegrity = true,
 }) {
   const editorRef = useRef(null);
+  const containerRef = useRef(null);
+  const onPasteBlockedRef = useRef(onPasteBlocked);
+  const onCopyBlockedRef = useRef(onCopyBlocked);
+
+  // Keep callback refs synchronized to avoid stale closures
+  useEffect(() => {
+    onPasteBlockedRef.current = onPasteBlocked;
+  }, [onPasteBlocked]);
+
+  useEffect(() => {
+    onCopyBlockedRef.current = onCopyBlocked;
+  }, [onCopyBlocked]);
 
   const handleEditorChange = (value) => {
     onCodeChange(value ?? '');
   };
 
-  const handleEditorDidMount = (editor) => {
+  const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
+
+    if (academicIntegrity) {
+      // 1. Monaco Command Overrides (KeyMod.CtrlCmd maps to Cmd on macOS and Ctrl on Windows/Linux)
+      // Block Cmd/Ctrl + V
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV, () => {
+        if (onPasteBlockedRef.current) {
+          onPasteBlockedRef.current();
+        }
+      });
+
+      // Block Shift + Insert (Alternative paste keybinding)
+      editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Insert, () => {
+        if (onPasteBlockedRef.current) {
+          onPasteBlockedRef.current();
+        }
+      });
+
+      // Block Cmd/Ctrl + C (Copy solution code)
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyC, () => {
+        if (onCopyBlockedRef.current) {
+          onCopyBlockedRef.current();
+        }
+      });
+
+      // Block Cmd/Ctrl + X (Cut solution code)
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyX, () => {
+        if (onCopyBlockedRef.current) {
+          onCopyBlockedRef.current();
+        }
+      });
+
+      // 2. Monaco KeyDown Interceptor for macOS Chrome and cross-platform events
+      editor.onKeyDown((e) => {
+        const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+        const keyChar = (e.browserEvent?.key || '').toLowerCase();
+        const isV = e.code === 'KeyV' || keyChar === 'v';
+        const isC = e.code === 'KeyC' || keyChar === 'c';
+        const isX = e.code === 'KeyX' || keyChar === 'x';
+        const isShiftInsert = e.shiftKey && (e.code === 'Insert' || e.browserEvent?.key === 'Insert');
+
+        // Prevent Paste
+        if ((isCtrlOrCmd && isV) || isShiftInsert) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.browserEvent) {
+            e.browserEvent.preventDefault();
+            e.browserEvent.stopImmediatePropagation();
+          }
+          if (onPasteBlockedRef.current) {
+            onPasteBlockedRef.current();
+          }
+          return;
+        }
+
+        // Prevent Copy / Cut
+        if (isCtrlOrCmd && (isC || isX)) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.browserEvent) {
+            e.browserEvent.preventDefault();
+            e.browserEvent.stopImmediatePropagation();
+          }
+          if (onCopyBlockedRef.current) {
+            onCopyBlockedRef.current();
+          }
+          return;
+        }
+      });
+
+      // 3. Block Monaco Context Menu
+      editor.onContextMenu((e) => {
+        e.event.preventDefault();
+        e.event.stopPropagation();
+      });
+
+      // 4. Attach capture-phase DOM listeners directly to editor DOM node and its inputarea textarea
+      const editorDom = editor.getDomNode();
+      if (editorDom) {
+        const handleDirectPaste = (e) => {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          if (onPasteBlockedRef.current) onPasteBlockedRef.current();
+          return false;
+        };
+
+        const handleDirectCopyCut = (e) => {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          e.stopPropagation();
+          if (onCopyBlockedRef.current) onCopyBlockedRef.current();
+          return false;
+        };
+
+        editorDom.addEventListener('paste', handleDirectPaste, true);
+        editorDom.addEventListener('copy', handleDirectCopyCut, true);
+        editorDom.addEventListener('cut', handleDirectCopyCut, true);
+
+        const textarea = editorDom.querySelector('textarea');
+        if (textarea) {
+          textarea.addEventListener('paste', handleDirectPaste, true);
+          textarea.addEventListener('copy', handleDirectCopyCut, true);
+          textarea.addEventListener('cut', handleDirectCopyCut, true);
+        }
+      }
+    }
   };
+
+  // 5. Container-level capturing listeners for DOM paste, copy, cut, contextmenu, drag & drop
+  useEffect(() => {
+    if (!academicIntegrity) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Suppress browser context menu inside the code editor
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      return false;
+    };
+
+    // Block native paste
+    const handlePaste = (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      if (onPasteBlockedRef.current) {
+        onPasteBlockedRef.current();
+      }
+      return false;
+    };
+
+    // Block native copy and cut
+    const handleCopyCut = (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      if (onCopyBlockedRef.current) {
+        onCopyBlockedRef.current();
+      }
+      return false;
+    };
+
+    // Block drag and drop code insertion into editor
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'none';
+      }
+    };
+
+    const handleDrop = (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      if (onPasteBlockedRef.current) {
+        onPasteBlockedRef.current();
+      }
+      return false;
+    };
+
+    // Attach in capture phase (true) so events are stopped before reaching inner elements
+    container.addEventListener('contextmenu', handleContextMenu, true);
+    container.addEventListener('paste', handlePaste, true);
+    container.addEventListener('copy', handleCopyCut, true);
+    container.addEventListener('cut', handleCopyCut, true);
+    container.addEventListener('dragover', handleDragOver, true);
+    container.addEventListener('drop', handleDrop, true);
+
+    return () => {
+      container.removeEventListener('contextmenu', handleContextMenu, true);
+      container.removeEventListener('paste', handlePaste, true);
+      container.removeEventListener('copy', handleCopyCut, true);
+      container.removeEventListener('cut', handleCopyCut, true);
+      container.removeEventListener('dragover', handleDragOver, true);
+      container.removeEventListener('drop', handleDrop, true);
+    };
+  }, [academicIntegrity]);
 
   const getMonacoLanguage = (lang) => {
     if (lang === 'c' || lang === 'cpp') return 'cpp';
@@ -31,6 +225,7 @@ export default function CodeEditor({
 
   return (
     <div
+      ref={containerRef}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -121,7 +316,9 @@ export default function CodeEditor({
             renderWhitespace: 'selection',
             smoothScrolling: true,
             cursorBlinking: 'smooth',
-            contextmenu: true,
+            contextmenu: false, // Disables Monaco's right-click context menu
+            dragAndDrop: false, // Disables dragging selections inside editor
+            dropIntoEditor: { enabled: false }, // Disables dropping external text into Monaco
             accessibilitySupport: 'off',
           }}
         />

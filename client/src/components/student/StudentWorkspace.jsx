@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Play,
   Send,
@@ -33,6 +33,7 @@ import CodeEditor from './CodeEditor';
 import Hero3DObject from './Hero3DObject';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
+import { focusTracker } from '../../services/focusService';
 
 export default function StudentWorkspace({
   practical,
@@ -57,6 +58,7 @@ export default function StudentWorkspace({
   onNavigate,
   currentUser: _currentUser,
   onSelectPractical,
+  onToast,
 }) {
   // Panel Visibility States
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
@@ -70,6 +72,42 @@ export default function StudentWorkspace({
   const [copiedConsole, setCopiedConsole] = useState(false);
   const [copiedSample, setCopiedSample] = useState(false);
   const consoleBottomRef = useRef(null);
+
+  // Academic Integrity Telemetry State & Attempt Counters
+  const [blockedPasteCount, setBlockedPasteCount] = useState(focusTracker.getState().pasteAttemptsCount || 0);
+  const [blockedCopyCount, setBlockedCopyCount] = useState(focusTracker.getState().copyAttemptsCount || 0);
+
+  useEffect(() => {
+    const unsub = focusTracker.subscribe((state) => {
+      setBlockedPasteCount(state.pasteAttemptsCount || 0);
+      setBlockedCopyCount(state.copyAttemptsCount || 0);
+    });
+    return () => unsub();
+  }, []);
+
+  const handlePasteBlocked = useCallback(() => {
+    focusTracker.recordIntegrityEvent({
+      type: 'paste_blocked',
+      note: 'External paste blocked (Academic Integrity Mode)',
+      practicalId: practical?.id,
+      studentId: _currentUser?.id,
+    });
+    if (onToast) {
+      onToast('Paste is disabled in Academic Integrity Mode.', 'warning');
+    }
+  }, [practical?.id, _currentUser?.id, onToast]);
+
+  const handleCopyBlocked = useCallback(() => {
+    focusTracker.recordIntegrityEvent({
+      type: 'copy_blocked',
+      note: 'Solution code copy/cut blocked (Academic Integrity Mode)',
+      practicalId: practical?.id,
+      studentId: _currentUser?.id,
+    });
+    if (onToast) {
+      onToast('Copying solution code is disabled in Academic Integrity Mode.', 'warning');
+    }
+  }, [practical?.id, _currentUser?.id, onToast]);
 
   // Auto-expand terminal on execution (React recommended pattern for state adjustment from prop)
   const [prevRunning, setPrevRunning] = useState(isRunning);
@@ -275,7 +313,7 @@ export default function StudentWorkspace({
           )}
         </div>
 
-        {/* Center: Language Selector & Auto-save Status */}
+        {/* Center: Language Selector, Auto-save Status & Academic Integrity Badge */}
         <div className="codelab-topbar-center">
           <select
             value={language}
@@ -295,6 +333,23 @@ export default function StudentWorkspace({
           >
             <ShieldCheck size={13} color="var(--success)" />
             <span>{isAutoSaving ? 'Saving...' : 'Auto-saved'}</span>
+          </div>
+
+          {/* Academic Integrity Mode Indicator */}
+          <div
+            className="codelab-integrity-badge"
+            title="Code must be authored directly in the controlled editor. Paste and external text insertion are disabled."
+          >
+            <Lock size={12} color="var(--primary)" />
+            <span>Academic Integrity Mode</span>
+          </div>
+
+          {/* Blocked Paste Attempts Counter */}
+          <div
+            className={`codelab-blocked-counter ${blockedPasteCount > 0 ? 'active' : ''}`}
+            title="Total blocked paste attempts in this session"
+          >
+            <span>Blocked paste attempts: {blockedPasteCount}</span>
           </div>
         </div>
 
@@ -532,6 +587,9 @@ export default function StudentWorkspace({
               onCodeChange={onCodeChange}
               onResetCode={onResetCode}
               isAutoSaving={isAutoSaving}
+              onPasteBlocked={handlePasteBlocked}
+              onCopyBlocked={handleCopyBlocked}
+              academicIntegrity={true}
             />
           </div>
 

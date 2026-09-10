@@ -5137,6 +5137,53 @@
   white-space: nowrap;
 }
 
+.codelab-integrity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary-light, #93c5fd);
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.codelab-integrity-badge:hover {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.codelab-blocked-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface-subtle);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+  cursor: default;
+  user-select: none;
+}
+
+.codelab-blocked-counter.active {
+  color: var(--warning-light, #fbbf24);
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  font-weight: 600;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.15);
+}
+
 .codelab-topbar-right {
   display: flex;
   align-items: center;

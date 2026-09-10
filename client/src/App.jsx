@@ -739,6 +739,7 @@ export default function App() {
             onNavigate={handleNavigate}
             currentUser={currentUser}
             onSelectPractical={handleSelectPractical}
+            onToast={addToast}
           />
         ) : activeNav === 'submissions' ? (
           <StudentSubmissionsView

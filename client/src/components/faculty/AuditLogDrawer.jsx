@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldAlert, Clock, AlertTriangle, CheckCircle, RotateCcw } from 'lucide-react';
+import { ShieldAlert, Clock, AlertTriangle, CheckCircle, RotateCcw, Lock, Copy } from 'lucide-react';
 import Drawer from '../ui/Drawer';
 import Badge from '../ui/Badge';
 import Button from '../ui/Button';
@@ -38,13 +38,13 @@ export default function AuditLogDrawer({ isOpen, onClose }) {
             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Non-Punitive Telemetry</span>
           </div>
           <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-            EduLab logs window focus and tab switches as audit metadata for faculty review.
+            EduLab logs window focus, tab switches, and blocked external paste attempts as audit metadata for faculty review.
             Unlike legacy software, code is never wiped out or auto-penalized.
           </p>
         </div>
 
         {/* Telemetry Summary Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
           <div
             style={{
               background: 'var(--bg-surface)',
@@ -67,9 +67,23 @@ export default function AuditLogDrawer({ isOpen, onClose }) {
               padding: '12px',
             }}
           >
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Total Distraction Time</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Total Distraction</div>
             <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--cyan-light)', marginTop: '4px' }}>
               {focusState.totalBlurDurationSeconds}s
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '12px',
+            }}
+          >
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Blocked Pastes</div>
+            <div style={{ fontSize: '20px', fontWeight: 700, color: (focusState.pasteAttemptsCount || 0) > 0 ? 'var(--danger-light)' : 'var(--success-light)', marginTop: '4px' }}>
+              {focusState.pasteAttemptsCount || 0}
             </div>
           </div>
         </div>
@@ -108,13 +122,33 @@ export default function AuditLogDrawer({ isOpen, onClose }) {
           ) : (
             logs.map((ev) => {
               const isBlur = ev.type === 'window_blur';
+              const isPasteBlocked = ev.type === 'paste_blocked';
+              const isCopyBlocked = ev.type === 'copy_blocked';
+
+              let borderColor = 'var(--border-subtle)';
+              let icon = <CheckCircle size={15} color="var(--info)" />;
+              let title = 'Focus Restored';
+
+              if (isBlur) {
+                borderColor = 'var(--warning-border)';
+                icon = <AlertTriangle size={15} color="var(--warning)" />;
+                title = 'Window Blur (Tab Switch)';
+              } else if (isPasteBlocked) {
+                borderColor = 'rgba(239, 68, 68, 0.4)';
+                icon = <Lock size={15} color="var(--danger)" />;
+                title = 'External Paste Blocked';
+              } else if (isCopyBlocked) {
+                borderColor = 'rgba(245, 158, 11, 0.4)';
+                icon = <Copy size={15} color="var(--warning)" />;
+                title = 'Solution Code Copy Blocked';
+              }
 
               return (
                 <div
                   key={ev.id}
                   style={{
                     background: 'var(--bg-surface)',
-                    border: `1px solid ${isBlur ? 'var(--warning-border)' : 'var(--border-subtle)'}`,
+                    border: `1px solid ${borderColor}`,
                     borderRadius: 'var(--radius-sm)',
                     padding: '10px 14px',
                     display: 'flex',
@@ -123,14 +157,10 @@ export default function AuditLogDrawer({ isOpen, onClose }) {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    {isBlur ? (
-                      <AlertTriangle size={15} color="var(--warning)" />
-                    ) : (
-                      <CheckCircle size={15} color="var(--info)" />
-                    )}
+                    {icon}
                     <div>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {isBlur ? 'Window Blur (Tab Switch)' : 'Focus Restored'}
+                        {title}
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                         {ev.note}
