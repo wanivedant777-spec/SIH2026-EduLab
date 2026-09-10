@@ -67,9 +67,9 @@ export default function LoginView({ onLoginSuccess }) {
       <div className="login-card">
         {/* Brand Header */}
         <div className="login-header">
-          <div className="login-badge">
-            <School size={16} />
-            <span>SIH 2026 · GHRCEM</span>
+          <div className="login-badge" aria-label="Edulabs">
+            <School size={16} aria-hidden="true" />
+            <span>Edulabs</span>
           </div>
           <h1 className="login-title">Practical Lab Management Platform</h1>
           <p className="login-subtitle">
